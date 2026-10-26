@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-950 text-slate-100 font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-wide;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background: rgba(15, 20, 31, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-card {
+    background: rgba(20, 27, 41, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card:hover {
+    border-color: rgba(0, 242, 255, 0.25);
+  }
+
+  .glass-card-booked {
+    background: rgba(25, 18, 28, 0.75);
+    border: 1px solid rgba(255, 51, 102, 0.2);
+  }
+
+  .glass-card-booked:hover {
+    border-color: rgba(255, 51, 102, 0.4);
+  }
+
+  .glass-card-available {
+    background: rgba(15, 28, 24, 0.75);
+    border: 1px solid rgba(0, 255, 136, 0.2);
+  }
+
+  .glass-card-available:hover {
+    border-color: rgba(0, 255, 136, 0.4);
+  }
+
+  .text-glow-cyan {
+    text-shadow: 0 0 12px rgba(0, 242, 255, 0.6);
+  }
+
+  .text-glow-magenta {
+    text-shadow: 0 0 12px rgba(255, 0, 127, 0.6);
+  }
+
+  .text-glow-green {
+    text-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+  }
+
+  .text-glow-red {
+    text-shadow: 0 0 12px rgba(255, 51, 102, 0.6);
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0d14;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d273b;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2b3952;
+}
+
+/* Print Stylesheet for Receipts */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #receipt-print-area, #receipt-print-area * {
+    visibility: visible;
+  }
+
+  #receipt-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 80mm;
+    margin: 0 auto;
+    padding: 10px;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: monospace;
+    font-size: 12px;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

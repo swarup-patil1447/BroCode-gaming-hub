@@ -1,0 +1,189 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String       @id @default(uuid())
+  employeeId         String       @unique
+  name               String
+  mobile             String
+  password           String
+  role               String       @default("EMPLOYEE")
+  isActive           Boolean      @default(true)
+  mustChangePassword Boolean      @default(false)
+  passwordChangedAt  DateTime?
+  tokenVersion       Int          @default(0)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  bookings           Booking[]    @relation("CreatedBookings")
+  payments           Payment[]    @relation("RecordedPayments")
+  auditLogs          AuditLog[]
+
+  @@index([employeeId])
+  @@index([role])
+}
+
+model Station {
+  id              Int              @id
+  tableNumber     Int              @unique
+  deviceType      String
+  status          String           @default("AVAILABLE")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  bookingStations BookingStation[]
+
+  @@index([deviceType])
+  @@index([status])
+}
+
+model PricingRule {
+  id              String     @id @default(uuid())
+  deviceType      String
+  controllerCount Int        @default(1)
+  hourlyRate      Float
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([deviceType, controllerCount])
+  @@index([deviceType])
+}
+
+model FoodItem {
+  id          String            @id @default(uuid())
+  name        String
+  category    String            @default("SNACKS")
+  price       Float
+  isAvailable Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  orderItems  BookingFoodItem[]
+
+  @@index([category])
+  @@index([isAvailable])
+}
+
+model Booking {
+  id              String            @id @default(uuid())
+  bookingCode     String            @unique
+  customerName    String
+  customerMobile  String
+  controllerCount Int               @default(1)
+  startTime       DateTime
+  endTime         DateTime
+  gamingAmount    Float             @default(0)
+  foodAmount      Float             @default(0)
+  discount        Float             @default(0)
+  grandTotal      Float             @default(0)
+  paymentStatus   String            @default("UNPAID")
+  paymentMethod   String?
+  bookingStatus   String            @default("ACTIVE")
+  notes           String?
+  cancelReason    String?
+  createdById     String?
+  createdBy       User?             @relation("CreatedBookings", fields: [createdById], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  stations        BookingStation[]
+  foodItems       BookingFoodItem[]
+  payments        Payment[]
+
+  @@index([startTime, endTime])
+  @@index([bookingStatus])
+  @@index([paymentStatus])
+  @@index([createdById])
+  @@index([customerMobile])
+  @@index([createdAt])
+}
+
+model BookingStation {
+  id                 String   @id @default(uuid())
+  bookingId          String
+  stationId          Int
+  appliedRatePerHour Float
+  createdAt          DateTime @default(now())
+  booking            Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  station            Station  @relation(fields: [stationId], references: [id])
+
+  @@unique([bookingId, stationId])
+  @@index([stationId])
+  @@index([bookingId])
+}
+
+model BookingFoodItem {
+  id         String   @id @default(uuid())
+  bookingId  String
+  foodItemId String
+  quantity   Int      @default(1)
+  unitPrice  Float
+  totalPrice Float
+  createdAt  DateTime @default(now())
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+
+  @@index([bookingId])
+  @@index([foodItemId])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  bookingId     String
+  amount        Float
+  paymentMethod String
+  recordedById  String?
+  recordedBy    User?    @relation("RecordedPayments", fields: [recordedById], references: [id])
+  createdAt     DateTime @default(now())
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([recordedById])
+  @@index([createdAt])
+}
+
+model PasswordResetOTP {
+  id         String   @id @default(uuid())
+  employeeId String
+  otp        String
+  expiresAt  DateTime
+  isUsed     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([expiresAt])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  type       String
+  title      String
+  message    String
+  targetRole String   @default("ALL")
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([targetRole])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  userName  String
+  userEmpId String
+  role      String
+  action    String
+  target    String
+  oldValue  String?
+  newValue  String?
+  timestamp DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([action])
+}
