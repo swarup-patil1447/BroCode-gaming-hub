@@ -47,6 +47,10 @@ const reportCtrl = __importStar(require("../controllers/report.controller"));
 const notifCtrl = __importStar(require("../controllers/notification.controller"));
 const auditCtrl = __importStar(require("../controllers/auditLog.controller"));
 exports.router = (0, express_1.Router)();
+// Health check route
+exports.router.get('/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString(), service: 'BroCode Gaming Cafe API' });
+});
 // Auth routes
 exports.router.post('/auth/login', authCtrl.login);
 exports.router.get('/auth/me', auth_1.authenticate, authCtrl.getMe);

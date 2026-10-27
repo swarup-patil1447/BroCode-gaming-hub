@@ -181,7 +181,7 @@ export const Login: React.FC = () => {
 
             <div className="flex items-center justify-between text-xs pt-1">
               <span className="text-slate-500 font-mono text-[11px]">
-                Demo: {selectedRole === 'OWNER' ? 'owner / owner123' : 'EMP001 / emp123'}
+                Demo: {selectedRole === 'OWNER' ? 'owner / OwnerPass2026!' : 'EMP001 / emp123'}
               </span>
               <button
                 type="button"

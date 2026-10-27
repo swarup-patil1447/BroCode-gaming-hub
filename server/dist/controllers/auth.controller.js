@@ -36,8 +36,11 @@ const login = async (req, res) => {
                 ],
             },
         });
-        if (!user || !user.isActive) {
-            return res.status(401).json({ error: 'Invalid credentials or inactive account' });
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        if (!user.isActive) {
+            return res.status(403).json({ error: 'Account is deactivated. Please contact the cafe owner.' });
         }
         if (expectedRole && user.role !== expectedRole) {
             return res.status(403).json({ error: `Account role mismatch: expected ${expectedRole}` });

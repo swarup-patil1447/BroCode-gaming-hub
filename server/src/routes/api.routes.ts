@@ -13,6 +13,11 @@ import * as auditCtrl from '../controllers/auditLog.controller';
 
 export const router = Router();
 
+// Health check route
+router.get('/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString(), service: 'BroCode Gaming Cafe API' });
+});
+
 // Auth routes
 router.post('/auth/login', authCtrl.login);
 router.get('/auth/me', authenticate as any, authCtrl.getMe as any);

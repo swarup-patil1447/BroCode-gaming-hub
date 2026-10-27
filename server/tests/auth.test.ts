@@ -23,14 +23,14 @@ describe('BroCode API Authentication and Authorization Tests', () => {
   });
 
   afterAll(async () => {
-    // Ensure owner retains the required temporary credentials owner / owner123 and mustChangePassword = true
-    const hash = await bcrypt.hash('owner123', 10);
+    // Restore owner to intended production/dev credentials: OwnerPass2026! and mustChangePassword: false
+    const hash = await bcrypt.hash('OwnerPass2026!', 10);
     await prisma.user.update({
       where: { id: ownerId },
       data: {
         employeeId: 'owner',
         password: hash,
-        mustChangePassword: true,
+        mustChangePassword: false,
         isActive: true,
       },
     });
@@ -128,5 +128,36 @@ describe('BroCode API Authentication and Authorization Tests', () => {
       .send({ employeeId: 'owner', password: newPass });
     expect(loginRes.status).toBe(200);
     expect(loginRes.body.data.user.mustChangePassword).toBe(false);
+  });
+
+  it('POST /api/auth/login accepts employee credentials EMP001/emp123', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ employeeId: 'EMP001', password: 'emp123', expectedRole: 'EMPLOYEE' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.token).toBeDefined();
+    expect(res.body.data.user.employeeId).toBe('EMP001');
+    expect(res.body.data.user.role).toBe('EMPLOYEE');
+    expect(res.body.data.user.isActive).toBe(true);
+  });
+
+  it('POST /api/auth/login rejects deactivated employee account with 403', async () => {
+    // Temporarily set an employee inactive
+    await prisma.user.update({
+      where: { employeeId: 'EMP002' },
+      data: { isActive: false },
+    });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ employeeId: 'EMP002', password: 'emp123', expectedRole: 'EMPLOYEE' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('deactivated');
+
+    // Restore employee active status
+    await prisma.user.update({
+      where: { employeeId: 'EMP002' },
+      data: { isActive: true },
+    });
   });
 });

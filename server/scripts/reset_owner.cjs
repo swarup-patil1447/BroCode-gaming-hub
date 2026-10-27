@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const targetUsername = 'owner';
-  const newTempPassword = 'owner123';
+  const newPassword = 'OwnerPass2026!';
 
   // Find the Owner account
   const owner = await prisma.user.findFirst({
@@ -20,7 +20,7 @@ async function main() {
 
   console.log(`Found Owner account: ID=${owner.id}, Current EmployeeId=${owner.employeeId}, Role=${owner.role}, Active=${owner.isActive}`);
 
-  const hashedPassword = await bcrypt.hash(newTempPassword, 10);
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
 
   // Update only this Owner account
   const updatedOwner = await prisma.user.update({
@@ -28,7 +28,7 @@ async function main() {
     data: {
       employeeId: targetUsername,
       password: hashedPassword,
-      mustChangePassword: true,
+      mustChangePassword: false,
       isActive: true,
       tokenVersion: { increment: 1 },
     },
@@ -44,7 +44,7 @@ async function main() {
       action: 'PASSWORD_RESET',
       target: 'OWNER_ACCOUNT',
       oldValue: null,
-      newValue: 'Temporary password set for local development recovery; mustChangePassword enabled',
+      newValue: 'Owner credentials configured to OwnerPass2026!',
     },
   });
 

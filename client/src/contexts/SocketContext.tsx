@@ -20,8 +20,16 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || window.location.origin;
-    const socketInstance = io(socketUrl, {
+    // If VITE_SOCKET_URL is explicitly set (e.g. remote backend domain), use it.
+    // Otherwise connect through current window origin, allowing Vite proxy to route
+    // /socket.io to backend on both localhost and LAN IP without cross-device origin mismatches.
+    const socketUrl =
+      import.meta.env.VITE_SOCKET_URL && import.meta.env.VITE_SOCKET_URL.trim() !== ''
+        ? import.meta.env.VITE_SOCKET_URL.trim()
+        : (typeof window !== 'undefined' ? window.location.origin : undefined);
+
+    const socketInstance = io(socketUrl || undefined, {
+      path: '/socket.io',
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,

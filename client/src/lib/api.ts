@@ -8,8 +8,15 @@ import {
   NotificationItem,
   AuditLogItem,
 } from '../types';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Determine API base URL:
+// - If VITE_API_URL is explicitly set (e.g., custom production backend URL), use it.
+// - Otherwise, default to '/api'.
+// In local dev and LAN, Vite proxy routes '/api' to backend (works on localhost, 127.0.0.1, and LAN IP).
+// In production, relative '/api' works with reverse proxies, same-origin setups, or Netlify redirects.
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim() !== ''
+    ? import.meta.env.VITE_API_URL.trim()
+    : '/api';
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, any>;
@@ -493,6 +500,14 @@ export const api = {
       return request<AuditLogItem[]>('/audit-logs', {
         method: 'GET',
         params,
+      });
+    },
+  },
+
+  health: {
+    check: async () => {
+      return request<{ status: string; time: string; service: string }>('/health', {
+        method: 'GET',
       });
     },
   },

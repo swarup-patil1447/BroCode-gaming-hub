@@ -11,8 +11,35 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware
+const configuredOrigins = CONFIG.CORS_ORIGIN
+  ? CONFIG.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+];
+
+const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]));
+
 app.use(cors({
-  origin: CONFIG.CORS_ORIGIN === '*' ? true : [CONFIG.CORS_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      CONFIG.CORS_ORIGIN === '*' ||
+      allowedOrigins.includes(origin) ||
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.netlify.app')
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
 app.use(express.json());
@@ -20,10 +47,12 @@ app.use(express.json());
 // API Routes
 app.use('/api', router);
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+// Health check endpoint (accessible at both /health and /api/health)
+const healthHandler = (req: Request, res: Response) => {
   res.json({ status: 'ok', time: new Date().toISOString(), service: 'BroCode Gaming Cafe API' });
-});
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // 404 Handler
 app.use((req: Request, res: Response) => {
@@ -46,11 +75,19 @@ if (process.env.NODE_ENV !== 'test') {
   startScheduler();
 
   // Start Server
-  const PORT = CONFIG.PORT || 5000;
-  server.listen(PORT, () => {
+  const PORT = Number(CONFIG.PORT) || 5000;
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`🎮 BroCode Gaming Cafe Server running on http://localhost:${PORT}`);
     console.log(`📡 Real-time Socket.IO initialized`);
     console.log(`⏰ Background session scheduler running`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use. Please terminate any process using port ${PORT} before starting the server.`);
+    } else {
+      console.error('❌ Server startup error:', err);
+    }
   });
 }
 

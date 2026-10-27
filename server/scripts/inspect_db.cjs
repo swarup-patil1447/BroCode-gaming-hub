@@ -3,8 +3,12 @@ const prisma = new PrismaClient();
 
 async function main() {
   const users = await prisma.user.findMany();
+  const bcrypt = require('bcryptjs');
   console.log('=== USERS IN DATABASE ===');
   for (const u of users) {
+    const isEmp123 = await bcrypt.compare('emp123', u.password);
+    const isOwner123 = await bcrypt.compare('owner123', u.password);
+    const isOwnerPass = await bcrypt.compare('OwnerPass2026!', u.password);
     console.log({
       id: u.id,
       employeeId: u.employeeId,
@@ -14,7 +18,9 @@ async function main() {
       isActive: u.isActive,
       mustChangePassword: u.mustChangePassword,
       hasPassword: !!u.password,
-      passwordLen: u.password ? u.password.length : 0,
+      matchesEmp123: isEmp123,
+      matchesOwner123: isOwner123,
+      matchesOwnerPass2026: isOwnerPass,
     });
   }
 
