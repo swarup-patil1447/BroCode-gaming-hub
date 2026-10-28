@@ -7,11 +7,14 @@ import {
   CalendarDays,
   UtensilsCrossed,
   Plus,
-  Users,
+  Menu,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export const MobileNav: React.FC<{ onNewBooking: () => void }> = ({ onNewBooking }) => {
+export const MobileNav: React.FC<{
+  onNewBooking: () => void;
+  onOpenDrawer?: () => void;
+}> = ({ onNewBooking, onOpenDrawer }) => {
   const { role } = useAuth();
   const isOwner = role === 'OWNER';
 
@@ -30,7 +33,7 @@ export const MobileNav: React.FC<{ onNewBooking: () => void }> = ({ onNewBooking
         }
       >
         <LayoutDashboard className="h-5 w-5 mb-1" />
-        <span>Dashboard</span>
+        <span>Home</span>
       </NavLink>
 
       {/* Stations Grid */}
@@ -53,6 +56,7 @@ export const MobileNav: React.FC<{ onNewBooking: () => void }> = ({ onNewBooking
           onClick={onNewBooking}
           className="h-14 w-14 rounded-full bg-gradient-to-r from-cyber-cyan to-blue-600 text-dark-950 flex items-center justify-center shadow-glow-cyan/60 active:scale-95 transition-transform border-4 border-dark-950"
           title="New Booking"
+          aria-label="New Booking"
         >
           <Plus className="h-7 w-7 stroke-[2.5]" />
         </button>
@@ -72,19 +76,31 @@ export const MobileNav: React.FC<{ onNewBooking: () => void }> = ({ onNewBooking
         <span>Bookings</span>
       </NavLink>
 
-      {/* Food or More */}
-      <NavLink
-        to={`${basePrefix}/food`}
-        className={({ isActive }) =>
-          cn(
-            'flex flex-col items-center justify-center p-2 rounded-xl text-[10px] font-semibold transition-colors flex-1',
-            isActive ? 'text-cyber-cyan' : 'text-slate-400 hover:text-slate-200'
-          )
-        }
-      >
-        <UtensilsCrossed className="h-5 w-5 mb-1" />
-        <span>Food</span>
-      </NavLink>
+      {/* Drawer Menu Button for All Dashboard Sections */}
+      {onOpenDrawer ? (
+        <button
+          type="button"
+          onClick={onOpenDrawer}
+          aria-label="Open all dashboard sections menu"
+          className="flex flex-col items-center justify-center p-2 rounded-xl text-[10px] font-semibold text-slate-400 hover:text-cyber-cyan active:scale-95 transition-all flex-1"
+        >
+          <Menu className="h-5 w-5 mb-1" />
+          <span>Menu</span>
+        </button>
+      ) : (
+        <NavLink
+          to={`${basePrefix}/food`}
+          className={({ isActive }) =>
+            cn(
+              'flex flex-col items-center justify-center p-2 rounded-xl text-[10px] font-semibold transition-colors flex-1',
+              isActive ? 'text-cyber-cyan' : 'text-slate-400 hover:text-slate-200'
+            )
+          }
+        >
+          <UtensilsCrossed className="h-5 w-5 mb-1" />
+          <span>Food</span>
+        </NavLink>
+      )}
     </div>
   );
 };

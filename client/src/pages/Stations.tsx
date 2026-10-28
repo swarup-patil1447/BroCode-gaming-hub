@@ -38,7 +38,12 @@ export const Stations: React.FC = () => {
   const filteredStations =
     deviceFilter === 'ALL'
       ? stations
-      : stations.filter((s) => s.deviceType === deviceFilter);
+      : stations.filter((s) => {
+          if (deviceFilter === 'CAR_SIMULATOR') {
+            return s.deviceType === 'CAR_SIMULATOR' || s.deviceType === 'SIMULATOR';
+          }
+          return s.deviceType === deviceFilter;
+        });
 
   return (
     <div className="space-y-6">

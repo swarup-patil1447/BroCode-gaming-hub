@@ -59,6 +59,7 @@ export function getDeviceColor(deviceType: string): string {
     case 'PS4':
       return 'text-cyber-purple border-cyber-purple/30 bg-cyber-purple/10';
     case 'CAR_SIMULATOR':
+    case 'SIMULATOR':
       return 'text-cyber-magenta border-cyber-magenta/30 bg-cyber-magenta/10';
     case 'PC':
       return 'text-cyber-green border-cyber-green/30 bg-cyber-green/10';
@@ -70,6 +71,7 @@ export function getDeviceColor(deviceType: string): string {
 export function getDeviceLabel(deviceType: string): string {
   switch (deviceType) {
     case 'CAR_SIMULATOR':
+    case 'SIMULATOR':
       return 'CAR SIMULATOR';
     default:
       return deviceType;

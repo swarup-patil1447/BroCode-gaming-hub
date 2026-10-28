@@ -32,6 +32,7 @@ export const Sidebar: React.FC<{ onNewBooking: () => void }> = ({ onNewBooking }
         { label: 'Reports', path: '/owner/reports', icon: BarChart3 },
         { label: 'Audit Logs', path: '/owner/audit', icon: FileText },
         { label: 'Settings', path: '/owner/settings', icon: Settings },
+        { label: 'Profile', path: '/owner/profile', icon: UserCheck },
       ]
     : [
         { label: 'Dashboard', path: '/employee/dashboard', icon: LayoutDashboard },

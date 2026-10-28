@@ -6,7 +6,10 @@ import { emitToAll, emitToRole } from '../socket';
 
 // Helper: Calculate rate per hour for a station device type and controller count
 const getHourlyRate = async (deviceType: string, controllerCount: number = 1): Promise<number> => {
-  if (deviceType === 'PS5' || deviceType === 'PS4') {
+  const isConsole = deviceType === 'PS5' || deviceType === 'PS4';
+  const isSim = deviceType === 'CAR_SIMULATOR' || deviceType === 'SIMULATOR';
+
+  if (isConsole) {
     const rule = await prisma.pricingRule.findUnique({
       where: {
         deviceType_controllerCount: {
@@ -16,9 +19,18 @@ const getHourlyRate = async (deviceType: string, controllerCount: number = 1): P
       },
     });
     if (rule) return rule.hourlyRate;
+  } else if (isSim) {
+    const rule = await prisma.pricingRule.findFirst({
+      where: {
+        deviceType: { in: ['CAR_SIMULATOR', 'SIMULATOR'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (rule) return rule.hourlyRate;
   } else {
     const rule = await prisma.pricingRule.findFirst({
       where: { deviceType },
+      orderBy: { updatedAt: 'desc' },
     });
     if (rule) return rule.hourlyRate;
   }
@@ -26,7 +38,7 @@ const getHourlyRate = async (deviceType: string, controllerCount: number = 1): P
   // Fallback defaults
   if (deviceType === 'PS5') return controllerCount === 2 ? 140 : 90;
   if (deviceType === 'PS4') return controllerCount === 2 ? 110 : 70;
-  if (deviceType === 'CAR_SIMULATOR') return 100;
+  if (isSim) return 100;
   return 70; // PC
 };
 

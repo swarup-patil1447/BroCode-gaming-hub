@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
+import { MobileDrawer } from './MobileDrawer';
 import { NewBookingModal } from '../bookings/NewBookingModal';
 import { NotificationDrawer } from '../notifications/NotificationDrawer';
 import { SessionEndAlarmModal } from '../alarm/SessionEndAlarmModal';
@@ -15,6 +16,7 @@ import { Booking } from '../../types';
 export const Layout: React.FC = () => {
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [extendBookingId, setExtendBookingId] = useState<string | null>(null);
 
   // Fetch booking details if extend is requested from alarm
@@ -29,8 +31,11 @@ export const Layout: React.FC = () => {
       {/* Mandatory Force Password Change Overlay */}
       <ForcePasswordChangeModal />
 
-      {/* Top Navigation */}
-      <Navbar onOpenNotifications={() => setIsNotificationsOpen(true)} />
+      {/* Top Navigation with Mobile Drawer Button */}
+      <Navbar
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
+      />
 
       {/* Main Body */}
       <div className="flex-1 flex overflow-hidden">
@@ -44,7 +49,18 @@ export const Layout: React.FC = () => {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <MobileNav onNewBooking={() => setIsNewBookingOpen(true)} />
+      <MobileNav
+        onNewBooking={() => setIsNewBookingOpen(true)}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
+      />
+
+      {/* Mobile Responsive Navigation Drawer */}
+      <MobileDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onNewBooking={() => setIsNewBookingOpen(true)}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+      />
 
       {/* Global Modals */}
       <NewBookingModal

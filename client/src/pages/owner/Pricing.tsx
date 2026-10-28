@@ -6,61 +6,204 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { formatCurrency, getDeviceColor, getDeviceLabel } from '../../lib/utils';
-import { Tag, ShieldAlert, Edit2, CheckCircle2 } from 'lucide-react';
+import { Tag, ShieldAlert, Edit2, CheckCircle2, AlertTriangle, X, RefreshCw } from 'lucide-react';
 
 export const Pricing: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [editingRule, setEditingRule] = useState<PricingRule | null>(null);
   const [newRate, setNewRate] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const { data: pricingRules = [], isLoading } = useQuery({
+  const {
+    data: pricingRules = [],
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useQuery({
     queryKey: ['pricing'],
     queryFn: () => api.pricing.getAll(),
   });
 
+  const getRuleDisplayName = (deviceType: string, controllerCount: number) => {
+    if (deviceType === 'CAR_SIMULATOR' || deviceType === 'SIMULATOR') {
+      return 'Car Simulator (Tables 5 & 6)';
+    }
+    if (deviceType === 'PC') {
+      return 'Gaming PC Rig (Tables 7 & 8)';
+    }
+    if (deviceType === 'PS5') {
+      return `PlayStation 5 (${controllerCount} Controller${controllerCount > 1 ? 's' : ''})`;
+    }
+    if (deviceType === 'PS4') {
+      return `PlayStation 4 (${controllerCount} Controller${controllerCount > 1 ? 's' : ''})`;
+    }
+    return `${deviceType} (${controllerCount}P)`;
+  };
+
   const updatePriceMutation = useMutation({
     mutationFn: (data: { deviceType: string; controllerCount: number; hourlyRate: number }) =>
       api.pricing.update(data),
-    onSuccess: () => {
+    onSuccess: (savedRule, variables) => {
+      // 1. Immediately update local cache for instant UI reflection (zero lag)
+      queryClient.setQueryData<PricingRule[]>(['pricing'], (oldRules: PricingRule[] | undefined) => {
+        const currentRules: PricingRule[] = oldRules ? [...oldRules] : [];
+        const canonicalType =
+          variables.deviceType === 'SIMULATOR' ? 'CAR_SIMULATOR' : variables.deviceType;
+        const exists = currentRules.some(
+          (r: PricingRule) =>
+            (r.deviceType === canonicalType || (canonicalType === 'CAR_SIMULATOR' && r.deviceType === 'SIMULATOR')) &&
+            r.controllerCount === variables.controllerCount
+        );
+
+        if (exists) {
+          return currentRules.map((r: PricingRule) => {
+            const matches =
+              (r.deviceType === canonicalType ||
+                (canonicalType === 'CAR_SIMULATOR' && r.deviceType === 'SIMULATOR')) &&
+              r.controllerCount === variables.controllerCount;
+            return matches ? { ...r, hourlyRate: variables.hourlyRate } : r;
+          });
+        }
+        return [
+          ...currentRules,
+          {
+            id: savedRule.id || `rule_${Date.now()}`,
+            deviceType: canonicalType as DeviceType,
+            controllerCount: variables.controllerCount,
+            hourlyRate: variables.hourlyRate,
+          },
+        ];
+      });
+
+      // 2. Invalidate relevant queries so everything stays in sync
       queryClient.invalidateQueries({ queryKey: ['pricing'] });
+      queryClient.invalidateQueries({ queryKey: ['stations'] });
+
+      // 3. Display clear success message
+      const displayName = getRuleDisplayName(variables.deviceType, variables.controllerCount);
+      setSuccessMessage(`Successfully updated rate for ${displayName} to ₹${variables.hourlyRate}/hr!`);
+      setErrorMessage(null);
+      setFormError(null);
       setEditingRule(null);
+
+      // Auto-dismiss success message after 6 seconds
+      setTimeout(() => {
+        setSuccessMessage((prev) => (prev?.includes(displayName) ? null : prev));
+      }, 6000);
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to update pricing on server';
+      setFormError(msg);
+      setErrorMessage(msg);
     },
   });
 
   const handleEdit = (rule: PricingRule) => {
-    setEditingRule(rule);
+    // Normalize simulator rule to CAR_SIMULATOR
+    const isSim = rule.deviceType === 'CAR_SIMULATOR' || rule.deviceType === 'SIMULATOR';
+    const normalizedRule: PricingRule = {
+      ...rule,
+      deviceType: isSim ? 'CAR_SIMULATOR' : rule.deviceType,
+      controllerCount: isSim ? 1 : rule.controllerCount,
+    };
+    setEditingRule(normalizedRule);
     setNewRate(rule.hourlyRate.toString());
+    setFormError(null);
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRule) return;
+
+    // Validate rate >= 0 and is a valid number
+    if (newRate === '' || newRate === undefined || newRate === null) {
+      setFormError('Please enter an hourly rate.');
+      return;
+    }
+
+    const parsed = parseFloat(newRate);
+    if (isNaN(parsed) || parsed < 0) {
+      setFormError('Hourly rate must be a valid number greater than or equal to 0.');
+      return;
+    }
+
+    setFormError(null);
     updatePriceMutation.mutate({
       deviceType: editingRule.deviceType,
       controllerCount: editingRule.controllerCount,
-      hourlyRate: parseFloat(newRate) || 0,
+      hourlyRate: parsed,
     });
   };
 
   const ps5Rules = pricingRules.filter((r) => r.deviceType === 'PS5');
   const ps4Rules = pricingRules.filter((r) => r.deviceType === 'PS4');
   const pcRule = pricingRules.find((r) => r.deviceType === 'PC');
-  const simRule = pricingRules.find((r) => r.deviceType === 'CAR_SIMULATOR');
+  const simRule = pricingRules.find(
+    (r) => r.deviceType === 'CAR_SIMULATOR' || r.deviceType === 'SIMULATOR'
+  );
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-display font-black text-white tracking-wide">
-          GAMING PRICING MANAGEMENT
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Owner-controlled hourly rates for PlayStation 5, PlayStation 4, PC, and Car Simulators
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-display font-black text-white tracking-wide">
+            GAMING PRICING MANAGEMENT
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Owner-controlled hourly rates for PlayStation 5, PlayStation 4, PC, and Car Simulators
+          </p>
+        </div>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => refetch()}
+          isLoading={isRefetching}
+          leftIcon={<RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />}
+        >
+          Refresh Prices
+        </Button>
       </div>
 
-      {/* Historical Price Protection Info Banner (Requirement 17) */}
+      {/* Success Notification Banner */}
+      {successMessage && (
+        <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-white text-xs flex items-center justify-between gap-3 shadow-glow-green/20 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 text-cyber-green shrink-0" />
+            <span className="font-semibold text-emerald-200">{successMessage}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors"
+            title="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Error Notification Banner */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-white text-xs flex items-center justify-between gap-3 shadow-glow-red/20 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-5 w-5 text-cyber-red shrink-0" />
+            <span className="font-semibold text-rose-200">{errorMessage}</span>
+          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors"
+            title="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Historical Price Protection Info Banner */}
       <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyber-cyan/40 text-xs text-slate-200 flex items-start gap-3 shadow-glow-cyan/10">
         <ShieldAlert className="h-5 w-5 text-cyber-cyan shrink-0 mt-0.5" />
         <div className="space-y-1 leading-relaxed">
@@ -190,7 +333,7 @@ export const Pricing: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <span className="font-mono font-black text-base text-cyber-magenta">
-                ₹{simRule?.hourlyRate || 100}/hr
+                ₹{simRule?.hourlyRate !== undefined ? simRule.hourlyRate : 100}/hr
               </span>
               <Button
                 size="sm"
@@ -232,7 +375,7 @@ export const Pricing: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <span className="font-mono font-black text-base text-cyber-green">
-                ₹{pcRule?.hourlyRate || 70}/hr
+                ₹{pcRule?.hourlyRate !== undefined ? pcRule.hourlyRate : 70}/hr
               </span>
               <Button
                 size="sm"
@@ -259,28 +402,53 @@ export const Pricing: React.FC = () => {
       {/* Edit Rate Modal */}
       <Modal
         isOpen={!!editingRule}
-        onClose={() => setEditingRule(null)}
+        onClose={() => {
+          setEditingRule(null);
+          setFormError(null);
+        }}
         title="Update Hourly Rate"
-        subtitle={`Editing rate for ${editingRule?.deviceType} (${editingRule?.controllerCount}P)`}
+        subtitle={
+          editingRule
+            ? `Editing rate for ${getRuleDisplayName(editingRule.deviceType, editingRule.controllerCount)}`
+            : 'Editing rate'
+        }
         maxWidth="sm"
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-xl bg-rose-950/80 border border-cyber-red/60 text-cyber-red text-xs flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="font-semibold">{formError}</span>
+            </div>
+          )}
+
           <Input
             label="Hourly Rate (₹) *"
             type="number"
-            min="1"
+            min="0"
+            step="1"
             value={newRate}
-            onChange={(e) => setNewRate(e.target.value)}
+            onChange={(e) => {
+              setNewRate(e.target.value);
+              setFormError(null);
+            }}
             required
             autoFocus
           />
 
-          <div className="p-3 rounded-xl bg-dark-950 text-[11px] text-slate-400">
-            Past bookings will stay at their original booked rate. Only future bookings will apply this new rate.
+          <div className="p-3 rounded-xl bg-dark-950 text-[11px] text-slate-400 leading-relaxed">
+            Past bookings will stay at their original booked rate. Future bookings and real-time station estimates will apply this new rate immediately.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setEditingRule(null)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setEditingRule(null);
+                setFormError(null);
+              }}
+            >
               Cancel
             </Button>
             <Button
@@ -296,3 +464,4 @@ export const Pricing: React.FC = () => {
     </div>
   );
 };
+

@@ -62,8 +62,8 @@ async function main() {
     { id: 2, tableNumber: 2, deviceType: 'PS5' },
     { id: 3, tableNumber: 3, deviceType: 'PS4' },
     { id: 4, tableNumber: 4, deviceType: 'PS4' },
-    { id: 5, tableNumber: 5, deviceType: 'SIMULATOR' },
-    { id: 6, tableNumber: 6, deviceType: 'SIMULATOR' },
+    { id: 5, tableNumber: 5, deviceType: 'CAR_SIMULATOR' },
+    { id: 6, tableNumber: 6, deviceType: 'CAR_SIMULATOR' },
     { id: 7, tableNumber: 7, deviceType: 'PC' },
     { id: 8, tableNumber: 8, deviceType: 'PC' },
   ];
@@ -96,6 +96,7 @@ async function main() {
     { deviceType: 'PS4', controllerCount: 3, hourlyRate: 150 },
     { deviceType: 'PS4', controllerCount: 4, hourlyRate: 190 },
     { deviceType: 'PC', controllerCount: 1, hourlyRate: 70 },
+    { deviceType: 'CAR_SIMULATOR', controllerCount: 1, hourlyRate: 100 },
     { deviceType: 'SIMULATOR', controllerCount: 1, hourlyRate: 100 },
   ];
 

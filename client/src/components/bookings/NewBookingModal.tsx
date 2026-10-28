@@ -87,13 +87,31 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
   // Calculate live gaming rate per station
   const calculateStationRate = (station: Station) => {
     const isConsole = station.deviceType === 'PS5' || station.deviceType === 'PS4';
+    const isSim = station.deviceType === 'CAR_SIMULATOR' || station.deviceType === 'SIMULATOR';
+
     const rule = isConsole
       ? pricingRules.find(
           (r) => r.deviceType === station.deviceType && r.controllerCount === controllerCount
         ) || pricingRules.find((r) => r.deviceType === station.deviceType && r.controllerCount === 1)
+      : isSim
+      ? pricingRules.find((r) => r.deviceType === 'CAR_SIMULATOR') ||
+        pricingRules.find((r) => r.deviceType === 'SIMULATOR')
       : pricingRules.find((r) => r.deviceType === station.deviceType);
 
-    const hourlyRate = rule ? rule.hourlyRate : station.deviceType === 'PS5' ? 90 : 70;
+    const fallbackRate =
+      station.deviceType === 'PS5'
+        ? controllerCount === 2
+          ? 140
+          : 90
+        : station.deviceType === 'PS4'
+        ? controllerCount === 2
+          ? 110
+          : 70
+        : isSim
+        ? 100
+        : 70;
+
+    const hourlyRate = rule ? rule.hourlyRate : fallbackRate;
     const durationHours = durationMinutes / 60;
     return {
       hourlyRate,

@@ -17,36 +17,95 @@ export const getAllPricing = async (req: Request, res: Response) => {
 
 export const updatePricing = async (req: AuthRequest, res: Response) => {
   try {
-    const { deviceType, controllerCount = 1, hourlyRate } = req.body;
-
-    if (!deviceType || hourlyRate === undefined) {
-      return res.status(400).json({ error: 'Device type and hourly rate are required' });
+    // 1. Authorization check
+    if (!req.user || req.user.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Unauthorized: Only owners are permitted to modify pricing' });
     }
 
+    const { deviceType, controllerCount = 1, hourlyRate } = req.body;
+
+    // 2. Validate deviceType
+    if (!deviceType || typeof deviceType !== 'string' || !deviceType.trim()) {
+      return res.status(400).json({ error: 'Device type is required' });
+    }
+
+    const trimmedDeviceType = deviceType.trim();
+
+    // 3. Validate hourlyRate: Must be a valid number >= 0
+    if (hourlyRate === undefined || hourlyRate === null || hourlyRate === '') {
+      return res.status(400).json({ error: 'Hourly rate is required' });
+    }
+
+    const numRate = Number(hourlyRate);
+    if (isNaN(numRate) || numRate < 0) {
+      return res.status(400).json({ error: 'Hourly rate must be a valid number greater than or equal to 0' });
+    }
+
+    // 4. Validate controllerCount
+    const parsedControllerCount = parseInt(String(controllerCount), 10) || 1;
+    if (parsedControllerCount < 1 || parsedControllerCount > 4) {
+      return res.status(400).json({ error: 'Controller count must be between 1 and 4' });
+    }
+
+    const isSimulator = trimmedDeviceType === 'CAR_SIMULATOR' || trimmedDeviceType === 'SIMULATOR';
+    const canonicalDeviceType = isSimulator ? 'CAR_SIMULATOR' : trimmedDeviceType;
+    const finalControllerCount = isSimulator ? 1 : parsedControllerCount;
+
+    // Find existing rule for oldRate calculation
     const existing = await prisma.pricingRule.findFirst({
       where: {
-        deviceType,
-        controllerCount,
+        deviceType: canonicalDeviceType,
+        controllerCount: finalControllerCount,
       },
     });
 
     const oldRate = existing ? existing.hourlyRate : null;
 
+    // Upsert canonical pricing rule
     const updated = await prisma.pricingRule.upsert({
       where: {
         deviceType_controllerCount: {
-          deviceType,
-          controllerCount,
+          deviceType: canonicalDeviceType,
+          controllerCount: finalControllerCount,
         },
       },
-      update: { hourlyRate: parseFloat(hourlyRate) },
+      update: { hourlyRate: numRate },
       create: {
-        deviceType,
-        controllerCount,
-        hourlyRate: parseFloat(hourlyRate),
+        deviceType: canonicalDeviceType,
+        controllerCount: finalControllerCount,
+        hourlyRate: numRate,
       },
     });
 
+    // If updating simulator, also synchronize legacy 'SIMULATOR' record and stations
+    if (isSimulator) {
+      try {
+        await prisma.pricingRule.upsert({
+          where: {
+            deviceType_controllerCount: {
+              deviceType: 'SIMULATOR',
+              controllerCount: 1,
+            },
+          },
+          update: { hourlyRate: numRate },
+          create: {
+            deviceType: 'SIMULATOR',
+            controllerCount: 1,
+            hourlyRate: numRate,
+          },
+        });
+
+        // Ensure stations 5 and 6 use CAR_SIMULATOR
+        await prisma.station.updateMany({
+          where: { id: { in: [5, 6] } },
+          data: { deviceType: 'CAR_SIMULATOR' },
+        });
+      } catch (syncErr) {
+        console.warn('Note: Simulator alias sync non-critical warning:', syncErr);
+      }
+    }
+
+    // 5. Audit Logging
     if (req.user) {
       await createAuditLog({
         userId: req.user.id,
@@ -54,9 +113,9 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
         userEmpId: req.user.employeeId,
         role: req.user.role,
         action: 'PRICING_UPDATE',
-        target: `${deviceType} (${controllerCount}P)`,
-        oldValue: oldRate ? `₹${oldRate}/hr` : 'None',
-        newValue: `₹${hourlyRate}/hr`,
+        target: isSimulator ? 'Car Simulator' : `${canonicalDeviceType} (${finalControllerCount}P)`,
+        oldValue: oldRate !== null ? `₹${oldRate}/hr` : 'None',
+        newValue: `₹${numRate}/hr`,
       });
     }
 

@@ -11,12 +11,18 @@ import {
   User as UserIcon,
   Wifi,
   WifiOff,
+  Menu,
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
-export const Navbar: React.FC<{ onOpenNotifications: () => void }> = ({ onOpenNotifications }) => {
+interface NavbarProps {
+  onOpenNotifications: () => void;
+  onOpenDrawer?: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ onOpenNotifications, onOpenDrawer }) => {
   const { user, logout, role } = useAuth();
   const { isConnected } = useSocket();
   const { isSoundEnabled, toggleSound, audioUnlocked, unlockAudio } = useAlarm();
@@ -31,10 +37,21 @@ export const Navbar: React.FC<{ onOpenNotifications: () => void }> = ({ onOpenNo
   const unreadCount = notifData?.unreadCount || 0;
 
   return (
-    <header className="sticky top-0 z-40 h-16 w-full border-b border-slate-800/80 bg-dark-950/85 backdrop-blur-md px-4 lg:px-8 flex items-center justify-between">
-      {/* Brand */}
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyber-cyan via-cyber-magenta to-purple-600 p-[2px] shadow-glow-cyan/30">
+    <header className="sticky top-0 z-40 h-16 w-full border-b border-slate-800/80 bg-dark-950/85 backdrop-blur-md px-3 sm:px-4 lg:px-8 flex items-center justify-between">
+      {/* Brand & Mobile Hamburger Toggle */}
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {onOpenDrawer && (
+          <button
+            type="button"
+            onClick={onOpenDrawer}
+            aria-label="Open mobile navigation menu"
+            className="lg:hidden p-2 rounded-xl bg-dark-850 border border-slate-700 text-slate-300 hover:text-white hover:bg-dark-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-cyber-cyan/50 transition-all min-h-[40px] min-w-[40px] flex items-center justify-center"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+
+        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyber-cyan via-cyber-magenta to-purple-600 p-[2px] shadow-glow-cyan/30 shrink-0">
           <div className="h-full w-full bg-dark-950 rounded-[10px] flex items-center justify-center">
             <span className="font-display font-black text-lg text-transparent bg-clip-text bg-gradient-to-r from-cyber-cyan to-cyber-magenta">
               BC
