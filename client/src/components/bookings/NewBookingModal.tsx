@@ -108,14 +108,24 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
           ? 110
           : 70
         : isSim
-        ? 100
+        ? 80
         : 70;
 
-    const hourlyRate = rule ? rule.hourlyRate : fallbackRate;
-    const durationHours = durationMinutes / 60;
+    const rate = rule ? rule.hourlyRate : fallbackRate;
+    const total = isSim
+      ? rate * (durationMinutes / 30)
+      : rate * (durationMinutes / 60);
+
     return {
-      hourlyRate,
-      total: hourlyRate * durationHours,
+      rate,
+      hourlyRate: isSim ? rate * 2 : rate,
+      total,
+      unitLabel: isSim ? '30m' : 'hr',
+      durationLabel: isSim
+        ? `${durationMinutes}m`
+        : durationMinutes >= 60
+        ? `${durationMinutes / 60}h`
+        : `${durationMinutes}m`,
     };
   };
 
@@ -131,7 +141,10 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     return {
       tableNumber: st.tableNumber,
       deviceType: st.deviceType,
+      rate: rateInfo.rate,
       hourlyRate: rateInfo.hourlyRate,
+      unitLabel: rateInfo.unitLabel,
+      durationLabel: rateInfo.durationLabel,
       total: rateInfo.total,
     };
   });
@@ -444,7 +457,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
               <div key={sb.tableNumber} className="flex items-center justify-between">
                 <span>
                   Table {sb.tableNumber} ({sb.deviceType}
-                  {sb.deviceType.includes('PS') ? ` • ${controllerCount}P` : ''}) - {durationMinutes / 60}h @ ₹{sb.hourlyRate}/hr
+                  {sb.deviceType.includes('PS') ? ` • ${controllerCount}P` : ''}) - {sb.durationLabel} @ ₹{sb.rate}/{sb.unitLabel}
                 </span>
                 <span className="font-mono text-white">₹{sb.total}</span>
               </div>

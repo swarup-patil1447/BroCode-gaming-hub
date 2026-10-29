@@ -96,8 +96,8 @@ async function main() {
     { deviceType: 'PS4', controllerCount: 3, hourlyRate: 150 },
     { deviceType: 'PS4', controllerCount: 4, hourlyRate: 190 },
     { deviceType: 'PC', controllerCount: 1, hourlyRate: 70 },
-    { deviceType: 'CAR_SIMULATOR', controllerCount: 1, hourlyRate: 100 },
-    { deviceType: 'SIMULATOR', controllerCount: 1, hourlyRate: 100 },
+    { deviceType: 'CAR_SIMULATOR', controllerCount: 1, hourlyRate: 80 },
+    { deviceType: 'SIMULATOR', controllerCount: 1, hourlyRate: 80 },
   ];
 
   for (const pr of pricing) {

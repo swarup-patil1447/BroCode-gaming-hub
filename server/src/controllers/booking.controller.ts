@@ -38,7 +38,7 @@ const getHourlyRate = async (deviceType: string, controllerCount: number = 1): P
   // Fallback defaults
   if (deviceType === 'PS5') return controllerCount === 2 ? 140 : 90;
   if (deviceType === 'PS4') return controllerCount === 2 ? 110 : 70;
-  if (isSim) return 100;
+  if (isSim) return 80;
   return 70; // PC
 };
 
@@ -101,7 +101,8 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
 
     const start = new Date(startTime);
     const end = new Date(endTime);
-    const durationHours = Math.max((end.getTime() - start.getTime()) / (1000 * 60 * 60), 0.5);
+    const durationMinutes = Math.max(Math.round((end.getTime() - start.getTime()) / (1000 * 60)), 30);
+    const durationHours = durationMinutes / 60;
 
     // 1. Conflict Check
     const conflicts = await prisma.bookingStation.findMany({
@@ -121,7 +122,7 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
       return res.status(409).json({ error: `Conflict detected on ${conflictTables} for the requested time.` });
     }
 
-    // 2. Fetch stations and calculate gaming total with historical rates
+    // 2. Fetch stations and calculate gaming total with dynamic rates
     const stations = await prisma.station.findMany({
       where: { id: { in: stationIds } },
     });
@@ -130,9 +131,15 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
     const stationRates: { stationId: number; appliedRatePerHour: number }[] = [];
 
     for (const st of stations) {
+      const isSim = st.deviceType === 'CAR_SIMULATOR' || st.deviceType === 'SIMULATOR';
       const rate = await getHourlyRate(st.deviceType, controllerCount);
-      stationRates.push({ stationId: st.id, appliedRatePerHour: rate });
-      gamingTotal += rate * durationHours;
+      const stationGaming = isSim
+        ? rate * (durationMinutes / 30)
+        : rate * (durationMinutes / 60);
+      const appliedRatePerHour = isSim ? rate * 2 : rate;
+
+      stationRates.push({ stationId: st.id, appliedRatePerHour });
+      gamingTotal += stationGaming;
     }
 
     // 3. Calculate Food Total

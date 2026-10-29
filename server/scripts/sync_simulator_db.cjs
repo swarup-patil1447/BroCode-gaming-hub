@@ -19,7 +19,8 @@ async function main() {
     where: { deviceType: 'SIMULATOR', controllerCount: 1 },
   });
 
-  const rateToUse = carSimRule?.hourlyRate || legacySimRule?.hourlyRate || 100;
+  const argRate = process.argv[2] ? parseFloat(process.argv[2]) : null;
+  const rateToUse = argRate !== null ? argRate : (carSimRule?.hourlyRate || legacySimRule?.hourlyRate || 80);
 
   // Upsert CAR_SIMULATOR
   await prisma.pricingRule.upsert({

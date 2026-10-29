@@ -79,17 +79,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {/* Gaming Charges Breakdown */}
           <div className="space-y-1.5 border-b border-dashed border-slate-300 pb-2">
             <p className="font-bold text-slate-800 uppercase text-[10px]">Gaming Stations</p>
-            {booking.stations.map((s) => (
-              <div key={s.id} className="flex justify-between">
-                <span>
-                  Table {s.station.tableNumber} ({s.station.deviceType}
-                  {s.station.deviceType.includes('PS') ? ` • ${booking.controllerCount}P` : ''})
-                </span>
-                <span className="font-bold">
-                  ₹{s.appliedRatePerHour * (booking.durationMinutes / 60)}
-                </span>
-              </div>
-            ))}
+            {booking.stations.map((s) => {
+              const isSim = s.station.deviceType === 'CAR_SIMULATOR' || s.station.deviceType === 'SIMULATOR';
+              const stationCharge = s.appliedRatePerHour * (booking.durationMinutes / 60);
+              return (
+                <div key={s.id} className="flex justify-between">
+                  <span>
+                    Table {s.station.tableNumber} ({s.station.deviceType}
+                    {s.station.deviceType.includes('PS') ? ` • ${booking.controllerCount}P` : ''})
+                    {isSim
+                      ? ` (${booking.durationMinutes}m @ ₹${s.appliedRatePerHour / 2}/30m)`
+                      : ` (${booking.durationMinutes / 60}h @ ₹${s.appliedRatePerHour}/hr)`}
+                  </span>
+                  <span className="font-bold">
+                    ₹{stationCharge}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Food Charges Breakdown */}

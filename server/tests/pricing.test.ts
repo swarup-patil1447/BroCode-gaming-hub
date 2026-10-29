@@ -129,10 +129,10 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     expect(missingRes.status).toBe(400);
   });
 
-  it('5. Owner can update CAR_SIMULATOR price and it persists immediately and in DB', async () => {
-    const targetRate = 135;
+  it('5. Owner can update CAR_SIMULATOR rate to ₹80 per 30 mins and it persists immediately in DB', async () => {
+    const targetRate = 80;
 
-    // Update Car Simulator price
+    // Update Car Simulator price to 80
     const updateRes = await request(app)
       .put('/api/pricing')
       .set('Authorization', `Bearer ${ownerToken}`)
@@ -141,7 +141,7 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.data.hourlyRate).toBe(targetRate);
 
-    // Verify persistence via GET /api/pricing
+    // Verify persistence via GET /api/pricing (simulating page refresh)
     const getRes = await request(app).get('/api/pricing');
     expect(getRes.status).toBe(200);
     const simRule = getRes.body.data.find(
@@ -163,11 +163,10 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     });
   });
 
-  it('6. Booking created on car simulator station uses the newly updated rate', async () => {
-    // Current rate was updated to 135
+  it('6. Newly confirmed 30-minute booking on car simulator uses the correct ₹80 base rate', async () => {
     const now = new Date();
     const startTime = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
-    const endTime = new Date(now.getTime() + 70 * 60 * 1000).toISOString(); // 1 hour duration
+    const endTime = new Date(now.getTime() + 40 * 60 * 1000).toISOString(); // 30 minutes duration
 
     const bookingRes = await request(app)
       .post('/api/bookings')
@@ -183,12 +182,101 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
 
     expect(bookingRes.status).toBe(201);
     const booking = bookingRes.body.data;
-    expect(booking.stations[0].appliedRatePerHour).toBe(135);
-    expect(booking.gamingAmount).toBe(135);
-    expect(booking.grandTotal).toBe(135);
+    expect(booking.gamingAmount).toBe(80);
+    expect(booking.grandTotal).toBe(80);
+    expect(booking.stations[0].appliedRatePerHour).toBe(160); // 80 per 30 mins = 160 per hr
   });
 
-  it('7. Owner can update PS5, PS4, and PC pricing reliably', async () => {
+  it('7. 60-minute car simulator booking uses ₹160 (2 units of 30 mins)', async () => {
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 50 * 60 * 1000).toISOString();
+    const endTime = new Date(now.getTime() + 110 * 60 * 1000).toISOString(); // 60 minutes duration
+
+    const bookingRes = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'Test Sim Customer 60m',
+        customerMobile: '9876543211',
+        stationIds: [6], // Table 6: Car Simulator
+        controllerCount: 1,
+        startTime,
+        endTime,
+      });
+
+    expect(bookingRes.status).toBe(201);
+    const booking = bookingRes.body.data;
+    expect(booking.gamingAmount).toBe(160);
+    expect(booking.grandTotal).toBe(160);
+    expect(booking.stations[0].appliedRatePerHour).toBe(160);
+  });
+
+  it('8. Changing car simulator rate to ₹95 updates subsequent bookings dynamically', async () => {
+    // 1. Update to 95
+    const updateRes = await request(app)
+      .put('/api/pricing')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ deviceType: 'CAR_SIMULATOR', controllerCount: 1, hourlyRate: 95 });
+    expect(updateRes.status).toBe(200);
+
+    // 2. Create new 30-minute booking
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 120 * 60 * 1000).toISOString();
+    const endTime = new Date(now.getTime() + 150 * 60 * 1000).toISOString(); // 30 minutes duration
+
+    const bookingRes = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'Test Sim Customer 95',
+        customerMobile: '9876543212',
+        stationIds: [5],
+        controllerCount: 1,
+        startTime,
+        endTime,
+      });
+
+    expect(bookingRes.status).toBe(201);
+    const booking = bookingRes.body.data;
+    expect(booking.gamingAmount).toBe(95);
+    expect(booking.grandTotal).toBe(95);
+    expect(booking.stations[0].appliedRatePerHour).toBe(190);
+  });
+
+  it('9. Existing bookings preserve their historical booked rates after price change', async () => {
+    // Check earlier 30m booking created at ₹80
+    const prevBooking = await prisma.booking.findFirst({
+      where: { customerName: 'Test Sim Customer' },
+    });
+    expect(prevBooking).toBeDefined();
+    expect(prevBooking?.gamingAmount).toBe(80);
+    expect(prevBooking?.grandTotal).toBe(80);
+  });
+
+  it('10. Other devices (PS5, PS4, PC) maintain their own rates accurately', async () => {
+    // PS5 1P rate is 90/hr -> 30 mins session = 45
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+    const endTime = new Date(now.getTime() + 40 * 60 * 1000).toISOString(); // 30 mins
+
+    const ps5BookingRes = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'Test PS5 Customer',
+        customerMobile: '9876543213',
+        stationIds: [1], // Table 1: PS5
+        controllerCount: 1,
+        startTime,
+        endTime,
+      });
+
+    expect(ps5BookingRes.status).toBe(201);
+    expect(ps5BookingRes.body.data.gamingAmount).toBe(45); // 90 * 0.5 = 45
+    expect(ps5BookingRes.body.data.stations[0].appliedRatePerHour).toBe(90);
+  });
+
+  it('11. Owner can update PS5, PS4, and PC pricing reliably', async () => {
     // Update PS5 2 controllers
     const ps5Res = await request(app)
       .put('/api/pricing')
@@ -215,7 +303,7 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     expect(pcRule.hourlyRate).toBe(85);
   });
 
-  it('8. Audit log records PRICING_UPDATE action with user and details', async () => {
+  it('12. Audit log records PRICING_UPDATE action with user and details', async () => {
     const logs = await prisma.auditLog.findMany({
       where: { action: 'PRICING_UPDATE' },
       orderBy: { timestamp: 'desc' },

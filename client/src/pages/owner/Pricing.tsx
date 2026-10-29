@@ -29,7 +29,7 @@ export const Pricing: React.FC = () => {
 
   const getRuleDisplayName = (deviceType: string, controllerCount: number) => {
     if (deviceType === 'CAR_SIMULATOR' || deviceType === 'SIMULATOR') {
-      return 'Car Simulator (Tables 5 & 6)';
+      return 'Car Simulator (Tables 5 & 6) - per 30 mins';
     }
     if (deviceType === 'PC') {
       return 'Gaming PC Rig (Tables 7 & 8)';
@@ -84,7 +84,8 @@ export const Pricing: React.FC = () => {
 
       // 3. Display clear success message
       const displayName = getRuleDisplayName(variables.deviceType, variables.controllerCount);
-      setSuccessMessage(`Successfully updated rate for ${displayName} to ₹${variables.hourlyRate}/hr!`);
+      const isSim = variables.deviceType === 'CAR_SIMULATOR' || variables.deviceType === 'SIMULATOR';
+      setSuccessMessage(`Successfully updated rate for ${displayName} to ₹${variables.hourlyRate}${isSim ? ' per 30 mins' : '/hr'}!`);
       setErrorMessage(null);
       setFormError(null);
       setEditingRule(null);
@@ -328,12 +329,12 @@ export const Pricing: React.FC = () => {
           <div className="p-4 rounded-xl bg-dark-950/80 border border-slate-800 flex items-center justify-between">
             <div>
               <p className="text-sm font-bold text-white">Full Cockpit & Wheel Setup</p>
-              <p className="text-[11px] text-slate-400 font-mono">Hourly simulator rate</p>
+              <p className="text-[11px] text-slate-400 font-mono">Simulator rate per 30 minutes</p>
             </div>
 
             <div className="flex items-center gap-3">
               <span className="font-mono font-black text-base text-cyber-magenta">
-                ₹{simRule?.hourlyRate !== undefined ? simRule.hourlyRate : 100}/hr
+                ₹{simRule?.hourlyRate !== undefined ? simRule.hourlyRate : 80} / 30 min
               </span>
               <Button
                 size="sm"
@@ -344,7 +345,7 @@ export const Pricing: React.FC = () => {
                       id: 'sim_1',
                       deviceType: 'CAR_SIMULATOR' as DeviceType,
                       controllerCount: 1,
-                      hourlyRate: 100,
+                      hourlyRate: 80,
                     }
                   )
                 }
@@ -406,7 +407,11 @@ export const Pricing: React.FC = () => {
           setEditingRule(null);
           setFormError(null);
         }}
-        title="Update Hourly Rate"
+        title={
+          editingRule?.deviceType === 'CAR_SIMULATOR' || editingRule?.deviceType === 'SIMULATOR'
+            ? 'Update Simulator Rate'
+            : 'Update Hourly Rate'
+        }
         subtitle={
           editingRule
             ? `Editing rate for ${getRuleDisplayName(editingRule.deviceType, editingRule.controllerCount)}`
@@ -423,7 +428,11 @@ export const Pricing: React.FC = () => {
           )}
 
           <Input
-            label="Hourly Rate (₹) *"
+            label={
+              editingRule?.deviceType === 'CAR_SIMULATOR' || editingRule?.deviceType === 'SIMULATOR'
+                ? 'Rate per 30 Minutes (₹) *'
+                : 'Hourly Rate (₹) *'
+            }
             type="number"
             min="0"
             step="1"
@@ -437,7 +446,9 @@ export const Pricing: React.FC = () => {
           />
 
           <div className="p-3 rounded-xl bg-dark-950 text-[11px] text-slate-400 leading-relaxed">
-            Past bookings will stay at their original booked rate. Future bookings and real-time station estimates will apply this new rate immediately.
+            {editingRule?.deviceType === 'CAR_SIMULATOR' || editingRule?.deviceType === 'SIMULATOR'
+              ? 'Past bookings will stay at their original booked rate. Future bookings and real-time station estimates will apply this new 30-minute rate immediately.'
+              : 'Past bookings will stay at their original booked rate. Future bookings and real-time station estimates will apply this new rate immediately.'}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

@@ -114,8 +114,8 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
         role: req.user.role,
         action: 'PRICING_UPDATE',
         target: isSimulator ? 'Car Simulator' : `${canonicalDeviceType} (${finalControllerCount}P)`,
-        oldValue: oldRate !== null ? `₹${oldRate}/hr` : 'None',
-        newValue: `₹${numRate}/hr`,
+        oldValue: oldRate !== null ? (isSimulator ? `₹${oldRate} / 30m` : `₹${oldRate}/hr`) : 'None',
+        newValue: isSimulator ? `₹${numRate} / 30m` : `₹${numRate}/hr`,
       });
     }
 
