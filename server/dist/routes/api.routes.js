@@ -71,6 +71,7 @@ exports.router.put('/bookings/:id', auth_1.authenticate, bookingCtrl.updateBooki
 exports.router.post('/bookings/:id/extend', auth_1.authenticate, bookingCtrl.extendSession);
 exports.router.post('/bookings/:id/cancel', auth_1.authenticate, bookingCtrl.cancelBooking);
 exports.router.post('/bookings/:id/food', auth_1.authenticate, bookingCtrl.addFoodToBooking);
+exports.router.post('/bookings/:id/add-console', auth_1.authenticate, bookingCtrl.addConsoleToBooking);
 // Pricing routes
 exports.router.get('/pricing', pricingCtrl.getAllPricing);
 exports.router.put('/pricing', auth_1.authenticate, auth_1.requireOwner, pricingCtrl.updatePricing);

@@ -8,6 +8,7 @@ import { CancelBookingModal } from '../components/bookings/CancelBookingModal';
 import { PaymentModal } from '../components/payments/PaymentModal';
 import { FoodOrderModal } from '../components/food/FoodOrderModal';
 import { ReceiptModal } from '../components/bookings/ReceiptModal';
+import { AddConsoleModal } from '../components/bookings/AddConsoleModal';
 import { formatCurrency, formatTime, formatDate } from '../lib/utils';
 import {
   CalendarDays,
@@ -19,6 +20,7 @@ import {
   Printer,
   Trash2,
   Eye,
+  Gamepad2,
 } from 'lucide-react';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
@@ -35,7 +37,7 @@ export const Bookings: React.FC = () => {
 
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
-  const [modalType, setModalType] = useState<'extend' | 'cancel' | 'pay' | 'food' | 'receipt' | null>(null);
+  const [modalType, setModalType] = useState<'extend' | 'cancel' | 'pay' | 'food' | 'receipt' | 'add-console' | null>(null);
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['bookings', statusFilter, dateFilter, paymentFilter, search],
@@ -48,7 +50,7 @@ export const Bookings: React.FC = () => {
       }),
   });
 
-  const openAction = (booking: Booking, type: 'extend' | 'cancel' | 'pay' | 'food' | 'receipt') => {
+  const openAction = (booking: Booking, type: 'extend' | 'cancel' | 'pay' | 'food' | 'receipt' | 'add-console') => {
     setActiveBooking(booking);
     setModalType(type);
   };
@@ -242,6 +244,15 @@ export const Bookings: React.FC = () => {
                         </button>
                         {b.bookingStatus !== 'CANCELLED' && b.bookingStatus !== 'COMPLETED' && (
                           <button
+                            onClick={() => openAction(b, 'add-console')}
+                            className="p-1.5 rounded-lg bg-dark-850 hover:bg-dark-800 text-emerald-400 hover:text-emerald-300"
+                            title="Add Console"
+                          >
+                            <Gamepad2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {b.bookingStatus !== 'CANCELLED' && b.bookingStatus !== 'COMPLETED' && (
+                          <button
                             onClick={() => openAction(b, 'extend')}
                             className="p-1.5 rounded-lg bg-dark-850 hover:bg-dark-800 text-cyber-cyan"
                             title="Extend Session"
@@ -309,6 +320,12 @@ export const Bookings: React.FC = () => {
 
       <ReceiptModal
         isOpen={modalType === 'receipt'}
+        onClose={() => setModalType(null)}
+        booking={activeBooking}
+      />
+
+      <AddConsoleModal
+        isOpen={modalType === 'add-console'}
         onClose={() => setModalType(null)}
         booking={activeBooking}
       />

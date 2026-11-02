@@ -1,18 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addFoodToBooking = exports.cancelBooking = exports.extendSession = exports.getBookingById = exports.getAllBookings = exports.updateBooking = exports.createBooking = exports.checkAvailability = void 0;
+exports.addConsoleToBooking = exports.addFoodToBooking = exports.cancelBooking = exports.extendSession = exports.getBookingById = exports.getAllBookings = exports.updateBooking = exports.createBooking = exports.checkAvailability = exports.getHourlyRate = void 0;
 const prisma_1 = require("../utils/prisma");
 const auditLogger_1 = require("../utils/auditLogger");
 const socket_1 = require("../socket");
 // Helper: Calculate rate per hour for a station device type and controller count
 const getHourlyRate = async (deviceType, controllerCount = 1) => {
-    const isConsole = deviceType === 'PS5' || deviceType === 'PS4';
-    const isSim = deviceType === 'CAR_SIMULATOR' || deviceType === 'SIMULATOR';
+    const norm = (deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
+    const isConsole = norm === 'PS5' || norm === 'PS4';
+    const isSim = norm === 'CAR_SIMULATOR' || norm === 'SIMULATOR';
     if (isConsole) {
         const rule = await prisma_1.prisma.pricingRule.findUnique({
             where: {
                 deviceType_controllerCount: {
-                    deviceType,
+                    deviceType: norm,
                     controllerCount: Math.min(Math.max(controllerCount, 1), 4),
                 },
             },
@@ -32,21 +33,22 @@ const getHourlyRate = async (deviceType, controllerCount = 1) => {
     }
     else {
         const rule = await prisma_1.prisma.pricingRule.findFirst({
-            where: { deviceType },
+            where: { deviceType: norm },
             orderBy: { updatedAt: 'desc' },
         });
         if (rule)
             return rule.hourlyRate;
     }
     // Fallback defaults
-    if (deviceType === 'PS5')
+    if (norm === 'PS5')
         return controllerCount === 2 ? 140 : 90;
-    if (deviceType === 'PS4')
+    if (norm === 'PS4')
         return controllerCount === 2 ? 110 : 70;
     if (isSim)
         return 80;
     return 70; // PC
 };
+exports.getHourlyRate = getHourlyRate;
 const checkAvailability = async (req, res) => {
     try {
         const { stationIds, startTime, endTime, excludeBookingId } = req.query;
@@ -117,7 +119,7 @@ const createBooking = async (req, res) => {
         const stationRates = [];
         for (const st of stations) {
             const isSim = st.deviceType === 'CAR_SIMULATOR' || st.deviceType === 'SIMULATOR';
-            const rate = await getHourlyRate(st.deviceType, controllerCount);
+            const rate = await (0, exports.getHourlyRate)(st.deviceType, controllerCount);
             const stationGaming = isSim
                 ? rate * (durationMinutes / 30)
                 : rate * (durationMinutes / 60);
@@ -379,6 +381,19 @@ const extendSession = async (req, res) => {
         }
         const newGamingAmount = booking.gamingAmount + additionalGaming;
         const newGrandTotal = Math.max(newGamingAmount + booking.foodAmount - booking.discount, 0);
+        // Re-check payments vs newGrandTotal
+        const allPayments = await prisma_1.prisma.payment.findMany({ where: { bookingId: booking.id } });
+        const totalPaid = allPayments.reduce((acc, p) => acc + p.amount, 0);
+        let paymentStatus = booking.paymentStatus;
+        if (totalPaid >= newGrandTotal) {
+            paymentStatus = 'PAID';
+        }
+        else if (totalPaid > 0) {
+            paymentStatus = 'PARTIAL';
+        }
+        else {
+            paymentStatus = 'UNPAID';
+        }
         const updated = await prisma_1.prisma.booking.update({
             where: { id: booking.id },
             data: {
@@ -386,6 +401,7 @@ const extendSession = async (req, res) => {
                 gamingAmount: newGamingAmount,
                 grandTotal: newGrandTotal,
                 bookingStatus: 'ACTIVE',
+                paymentStatus,
             },
             include: {
                 createdBy: {
@@ -542,3 +558,167 @@ const addFoodToBooking = async (req, res) => {
     }
 };
 exports.addFoodToBooking = addFoodToBooking;
+const addConsoleToBooking = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { stationId, controllerCount = 1 } = req.body;
+        if (!stationId) {
+            return res.status(400).json({ error: 'Station ID is required' });
+        }
+        const sId = parseInt(String(stationId), 10);
+        if (isNaN(sId)) {
+            return res.status(400).json({ error: 'Valid station ID is required' });
+        }
+        const booking = await prisma_1.prisma.booking.findUnique({
+            where: { id },
+            include: {
+                stations: { include: { station: true } },
+                payments: true,
+            },
+        });
+        if (!booking) {
+            return res.status(404).json({ error: 'Booking not found' });
+        }
+        if (booking.bookingStatus === 'CANCELLED') {
+            return res.status(400).json({ error: 'Cannot add a console to a cancelled booking' });
+        }
+        if (booking.bookingStatus === 'COMPLETED') {
+            return res.status(400).json({ error: 'Cannot add a console to a completed booking' });
+        }
+        const now = new Date();
+        if (now >= booking.endTime) {
+            return res.status(400).json({ error: 'Booking session has already ended' });
+        }
+        // Check if station is already attached to this booking
+        const alreadyAttached = booking.stations.some((bs) => bs.stationId === sId);
+        if (alreadyAttached) {
+            return res.status(400).json({ error: `Station Table ${sId} is already part of this booking` });
+        }
+        const targetStation = await prisma_1.prisma.station.findUnique({
+            where: { id: sId },
+        });
+        if (!targetStation) {
+            return res.status(404).json({ error: 'Station not found' });
+        }
+        if (targetStation.status === 'MAINTENANCE') {
+            return res.status(409).json({ error: `Table ${targetStation.tableNumber} is currently under maintenance` });
+        }
+        // Overlap conflict check for the remaining duration
+        const effectiveStart = now > booking.startTime ? now : booking.startTime;
+        const effectiveEnd = booking.endTime;
+        const conflicts = await prisma_1.prisma.bookingStation.findMany({
+            where: {
+                stationId: sId,
+                booking: {
+                    id: { not: booking.id },
+                    bookingStatus: { in: ['ACTIVE', 'UPCOMING'] },
+                    startTime: { lt: effectiveEnd },
+                    endTime: { gt: effectiveStart },
+                },
+            },
+            include: {
+                station: true,
+                booking: true,
+            },
+        });
+        if (conflicts.length > 0) {
+            return res.status(409).json({
+                error: `Table ${targetStation.tableNumber} is not available during this time slot (conflict detected with ${conflicts[0].booking.bookingCode}).`,
+            });
+        }
+        // Calculate remaining duration
+        const remainingMs = effectiveEnd.getTime() - effectiveStart.getTime();
+        const remainingMinutes = Math.max(Math.ceil(remainingMs / (1000 * 60)), 1);
+        const normType = (targetStation.deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
+        const isSim = normType === 'CAR_SIMULATOR' || normType === 'SIMULATOR';
+        const rate = await (0, exports.getHourlyRate)(targetStation.deviceType, controllerCount);
+        let additionalGaming = 0;
+        let appliedRatePerHour = rate;
+        if (isSim) {
+            additionalGaming = Math.round(rate * (remainingMinutes / 30));
+            appliedRatePerHour = rate * 2;
+        }
+        else {
+            additionalGaming = Math.round((rate * remainingMinutes) / 60);
+            appliedRatePerHour = rate;
+        }
+        additionalGaming = Math.max(0, additionalGaming);
+        const newGamingAmount = booking.gamingAmount + additionalGaming;
+        const newGrandTotal = Math.max(0, newGamingAmount + booking.foodAmount - booking.discount);
+        // Re-evaluate payment status
+        const totalPaid = booking.payments.reduce((acc, p) => acc + p.amount, 0);
+        let newPaymentStatus = 'UNPAID';
+        if (totalPaid >= newGrandTotal) {
+            newPaymentStatus = 'PAID';
+        }
+        else if (totalPaid > 0) {
+            newPaymentStatus = 'PARTIAL';
+        }
+        else {
+            newPaymentStatus = 'UNPAID';
+        }
+        const updated = await prisma_1.prisma.$transaction(async (tx) => {
+            await tx.bookingStation.create({
+                data: {
+                    bookingId: booking.id,
+                    stationId: targetStation.id,
+                    appliedRatePerHour,
+                },
+            });
+            if (booking.bookingStatus === 'ACTIVE') {
+                await tx.station.update({
+                    where: { id: targetStation.id },
+                    data: { status: 'OCCUPIED' },
+                });
+            }
+            return await tx.booking.update({
+                where: { id: booking.id },
+                data: {
+                    gamingAmount: newGamingAmount,
+                    grandTotal: newGrandTotal,
+                    paymentStatus: newPaymentStatus,
+                },
+                include: {
+                    createdBy: { select: { id: true, name: true, employeeId: true, role: true } },
+                    stations: { include: { station: true } },
+                    foodItems: { include: { foodItem: true } },
+                    payments: {
+                        include: {
+                            recordedBy: { select: { id: true, name: true, employeeId: true } },
+                        },
+                    },
+                },
+            });
+        });
+        if (req.user) {
+            await (0, auditLogger_1.createAuditLog)({
+                userId: req.user.id,
+                userName: req.user.name,
+                userEmpId: req.user.employeeId,
+                role: req.user.role,
+                action: 'BOOKING_ADD_CONSOLE',
+                target: booking.bookingCode,
+                newValue: `Added Table ${targetStation.tableNumber} (${targetStation.deviceType}) for remaining ${remainingMinutes}m (+₹${additionalGaming}). New Total: ₹${newGrandTotal}`,
+            });
+        }
+        (0, socket_1.emitToAll)('booking_updated', updated);
+        (0, socket_1.emitToAll)('booking.updated', updated);
+        (0, socket_1.emitToAll)('station_updated', {});
+        (0, socket_1.emitToAll)('station.updated', {});
+        return res.status(200).json({
+            data: updated,
+            addedStation: {
+                stationId: targetStation.id,
+                tableNumber: targetStation.tableNumber,
+                deviceType: targetStation.deviceType,
+                remainingMinutes,
+                additionalCharge: additionalGaming,
+                rate,
+            },
+        });
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+exports.addConsoleToBooking = addConsoleToBooking;

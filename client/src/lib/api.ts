@@ -276,6 +276,16 @@ export const api = {
       });
     },
 
+    addConsole: async (
+      id: string,
+      payload: { stationId: number; controllerCount?: number }
+    ) => {
+      return request<Booking>(`/bookings/${id}/add-console`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+
     checkAvailability: async (params: {
       stationIds: number[];
       startTime: string;

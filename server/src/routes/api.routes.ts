@@ -40,6 +40,7 @@ router.put('/bookings/:id', authenticate as any, bookingCtrl.updateBooking as an
 router.post('/bookings/:id/extend', authenticate as any, bookingCtrl.extendSession as any);
 router.post('/bookings/:id/cancel', authenticate as any, bookingCtrl.cancelBooking as any);
 router.post('/bookings/:id/food', authenticate as any, bookingCtrl.addFoodToBooking as any);
+router.post('/bookings/:id/add-console', authenticate as any, bookingCtrl.addConsoleToBooking as any);
 
 // Pricing routes
 router.get('/pricing', pricingCtrl.getAllPricing);

@@ -7,6 +7,7 @@ import { ExtendSessionModal } from '../../components/bookings/ExtendSessionModal
 import { PaymentModal } from '../../components/payments/PaymentModal';
 import { FoodOrderModal } from '../../components/food/FoodOrderModal';
 import { ReceiptModal } from '../../components/bookings/ReceiptModal';
+import { AddConsoleModal } from '../../components/bookings/AddConsoleModal';
 import { formatCurrency, formatTime, formatDate } from '../../lib/utils';
 import { Booking } from '../../types';
 import {
@@ -34,7 +35,7 @@ export const OwnerDashboard: React.FC = () => {
   const [selectedStationForBook, setSelectedStationForBook] = useState<number | null>(null);
 
   const [activeBookingForModal, setActiveBookingForModal] = useState<Booking | null>(null);
-  const [modalType, setModalType] = useState<'view' | 'food' | 'pay' | 'extend' | 'receipt' | null>(null);
+  const [modalType, setModalType] = useState<'view' | 'food' | 'pay' | 'extend' | 'receipt' | 'add-console' | null>(null);
 
   // Fetch Dashboard Summary
   const { data: summary, isLoading: isSummaryLoading } = useQuery({
@@ -57,7 +58,7 @@ export const OwnerDashboard: React.FC = () => {
     refetchInterval: 10000,
   });
 
-  const handleAction = async (bookingId: string, type: 'view' | 'food' | 'pay' | 'extend' | 'receipt') => {
+  const handleAction = async (bookingId: string, type: 'view' | 'food' | 'pay' | 'extend' | 'receipt' | 'add-console') => {
     try {
       const b = await api.bookings.getById(bookingId);
       setActiveBookingForModal(b);
@@ -285,12 +286,23 @@ export const OwnerDashboard: React.FC = () => {
                       </Badge>
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <button
-                        onClick={() => handleAction(b.id, 'receipt')}
-                        className="text-cyber-cyan hover:underline font-semibold"
-                      >
-                        Receipt
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {b.bookingStatus !== 'CANCELLED' && b.bookingStatus !== 'COMPLETED' && (
+                          <button
+                            onClick={() => handleAction(b.id, 'add-console')}
+                            className="p-1 rounded bg-dark-850 hover:bg-dark-800 text-emerald-400"
+                            title="Add Console"
+                          >
+                            <Gamepad2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleAction(b.id, 'receipt')}
+                          className="text-cyber-cyan hover:underline font-semibold text-xs"
+                        >
+                          Receipt
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -327,6 +339,12 @@ export const OwnerDashboard: React.FC = () => {
 
       <ReceiptModal
         isOpen={modalType === 'receipt'}
+        onClose={() => setModalType(null)}
+        booking={activeBookingForModal}
+      />
+
+      <AddConsoleModal
+        isOpen={modalType === 'add-console'}
         onClose={() => setModalType(null)}
         booking={activeBookingForModal}
       />

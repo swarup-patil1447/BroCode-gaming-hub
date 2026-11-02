@@ -7,6 +7,7 @@ import { ExtendSessionModal } from '../../components/bookings/ExtendSessionModal
 import { PaymentModal } from '../../components/payments/PaymentModal';
 import { FoodOrderModal } from '../../components/food/FoodOrderModal';
 import { ReceiptModal } from '../../components/bookings/ReceiptModal';
+import { AddConsoleModal } from '../../components/bookings/AddConsoleModal';
 import { Booking } from '../../types';
 import { formatCurrency, formatTime, formatCountdown } from '../../lib/utils';
 import {
@@ -30,7 +31,7 @@ export const EmployeeDashboard: React.FC = () => {
   const [selectedStationForBook, setSelectedStationForBook] = useState<number | null>(null);
 
   const [activeBookingForModal, setActiveBookingForModal] = useState<Booking | null>(null);
-  const [modalType, setModalType] = useState<'view' | 'food' | 'pay' | 'extend' | 'receipt' | null>(null);
+  const [modalType, setModalType] = useState<'view' | 'food' | 'pay' | 'extend' | 'receipt' | 'add-console' | null>(null);
 
   // Fetch Stations
   const { data: stations = [], isLoading: isStationsLoading } = useQuery({
@@ -46,7 +47,7 @@ export const EmployeeDashboard: React.FC = () => {
     refetchInterval: 10000,
   });
 
-  const handleAction = async (bookingId: string, type: 'view' | 'food' | 'pay' | 'extend' | 'receipt') => {
+  const handleAction = async (bookingId: string, type: 'view' | 'food' | 'pay' | 'extend' | 'receipt' | 'add-console') => {
     try {
       const b = await api.bookings.getById(bookingId);
       setActiveBookingForModal(b);
@@ -174,6 +175,16 @@ export const EmployeeDashboard: React.FC = () => {
                     {formatCurrency(b.grandTotal)}
                   </span>
                   <div className="flex items-center gap-1.5">
+                    {b.bookingStatus !== 'CANCELLED' && b.bookingStatus !== 'COMPLETED' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleAction(b.id, 'add-console')}
+                        leftIcon={<Gamepad2 className="h-3.5 w-3.5 text-cyber-green" />}
+                      >
+                        Add Console
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
@@ -225,6 +236,12 @@ export const EmployeeDashboard: React.FC = () => {
 
       <ReceiptModal
         isOpen={modalType === 'receipt'}
+        onClose={() => setModalType(null)}
+        booking={activeBookingForModal}
+      />
+
+      <AddConsoleModal
+        isOpen={modalType === 'add-console'}
         onClose={() => setModalType(null)}
         booking={activeBookingForModal}
       />

@@ -82,6 +82,7 @@ export interface BookingStationItem {
   bookingId: string;
   stationId: number;
   appliedRatePerHour: number;
+  createdAt?: string;
   station: Station;
 }
 

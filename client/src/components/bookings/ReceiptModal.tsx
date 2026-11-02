@@ -81,15 +81,31 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             <p className="font-bold text-slate-800 uppercase text-[10px]">Gaming Stations</p>
             {booking.stations.map((s) => {
               const isSim = s.station.deviceType === 'CAR_SIMULATOR' || s.station.deviceType === 'SIMULATOR';
-              const stationCharge = s.appliedRatePerHour * (booking.durationMinutes / 60);
+              let stDuration = booking.durationMinutes;
+              if (s.createdAt && booking.startTime) {
+                const sCreated = new Date(s.createdAt).getTime();
+                const bStart = new Date(booking.startTime).getTime();
+                const bEnd = new Date(booking.endTime).getTime();
+                if (sCreated > bStart + 60000) {
+                  stDuration = Math.min(
+                    booking.durationMinutes,
+                    Math.max(1, Math.round((bEnd - sCreated) / (1000 * 60)))
+                  );
+                }
+              }
+
+              const stationCharge = isSim
+                ? Math.round((s.appliedRatePerHour / 2) * (stDuration / 30))
+                : Math.round(s.appliedRatePerHour * (stDuration / 60));
+
               return (
                 <div key={s.id} className="flex justify-between">
                   <span>
                     Table {s.station.tableNumber} ({s.station.deviceType}
                     {s.station.deviceType.includes('PS') ? ` • ${booking.controllerCount}P` : ''})
                     {isSim
-                      ? ` (${booking.durationMinutes}m @ ₹${s.appliedRatePerHour / 2}/30m)`
-                      : ` (${booking.durationMinutes / 60}h @ ₹${s.appliedRatePerHour}/hr)`}
+                      ? ` (${stDuration}m @ ₹${s.appliedRatePerHour / 2}/30m)`
+                      : ` (${stDuration >= 60 ? `${(stDuration / 60).toFixed(1)}h` : `${stDuration}m`} @ ₹${s.appliedRatePerHour}/hr)`}
                   </span>
                   <span className="font-bold">
                     ₹{stationCharge}

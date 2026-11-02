@@ -72,7 +72,17 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     await prisma.bookingFoodItem.deleteMany({});
     await prisma.payment.deleteMany({});
     await prisma.booking.deleteMany({
-      where: { customerName: 'Test Sim Customer' },
+      where: {
+        OR: [
+          { customerName: { startsWith: 'Test Sim Customer' } },
+          { customerName: { startsWith: 'Test PS5 Customer' } },
+        ],
+      },
+    });
+    // Restore CAR_SIMULATOR and SIMULATOR back to configured 80
+    await prisma.pricingRule.updateMany({
+      where: { deviceType: { in: ['CAR_SIMULATOR', 'SIMULATOR'] } },
+      data: { hourlyRate: 80 },
     });
     await prisma.$disconnect();
   });
