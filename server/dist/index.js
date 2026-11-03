@@ -12,6 +12,7 @@ const api_routes_1 = require("./routes/api.routes");
 const socket_1 = require("./socket");
 const scheduler_1 = require("./services/scheduler");
 const prisma_1 = require("./utils/prisma");
+const pricingSync_1 = require("./utils/pricingSync");
 const app = (0, express_1.default)();
 exports.app = app;
 const server = http_1.default.createServer(app);
@@ -70,6 +71,10 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV !== 'test') {
     (0, socket_1.initSocket)(server);
     (0, scheduler_1.startScheduler)();
+    // Run startup database pricing harmonization
+    (0, pricingSync_1.syncDatabasePricing)().catch((err) => {
+        console.warn('[SERVER] Warning during pricing sync:', err);
+    });
     // Start Server
     const PORT = Number(config_1.CONFIG.PORT) || 5000;
     server.listen(PORT, '0.0.0.0', () => {

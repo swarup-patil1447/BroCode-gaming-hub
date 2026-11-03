@@ -6,6 +6,7 @@ import { router } from './routes/api.routes';
 import { initSocket } from './socket';
 import { startScheduler } from './services/scheduler';
 import { prisma } from './utils/prisma';
+import { syncDatabasePricing } from './utils/pricingSync';
 
 const app = express();
 const server = http.createServer(app);
@@ -73,6 +74,11 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 if (process.env.NODE_ENV !== 'test') {
   initSocket(server);
   startScheduler();
+
+  // Run startup database pricing harmonization
+  syncDatabasePricing().catch((err) => {
+    console.warn('[SERVER] Warning during pricing sync:', err);
+  });
 
   // Start Server
   const PORT = Number(CONFIG.PORT) || 5000;

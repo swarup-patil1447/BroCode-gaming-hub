@@ -97,7 +97,13 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
 
         // Ensure stations 5 and 6 use CAR_SIMULATOR
         await prisma.station.updateMany({
-          where: { id: { in: [5, 6] } },
+          where: {
+            OR: [
+              { id: { in: [5, 6] } },
+              { tableNumber: { in: [5, 6] } },
+              { deviceType: 'SIMULATOR' },
+            ],
+          },
           data: { deviceType: 'CAR_SIMULATOR' },
         });
       } catch (syncErr) {

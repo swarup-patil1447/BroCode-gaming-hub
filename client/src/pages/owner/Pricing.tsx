@@ -142,9 +142,9 @@ export const Pricing: React.FC = () => {
   const ps5Rules = pricingRules.filter((r) => r.deviceType === 'PS5');
   const ps4Rules = pricingRules.filter((r) => r.deviceType === 'PS4');
   const pcRule = pricingRules.find((r) => r.deviceType === 'PC');
-  const simRule = pricingRules.find(
-    (r) => r.deviceType === 'CAR_SIMULATOR' || r.deviceType === 'SIMULATOR'
-  );
+  const simRule =
+    pricingRules.find((r) => r.deviceType === 'CAR_SIMULATOR') ||
+    pricingRules.find((r) => r.deviceType === 'SIMULATOR');
 
   return (
     <div className="space-y-6">

@@ -3,44 +3,12 @@ import { prisma } from '../utils/prisma';
 import { AuthRequest } from '../middlewares/auth';
 import { createAuditLog } from '../utils/auditLogger';
 import { emitToAll, emitToRole } from '../socket';
+import { getPricingRuleForStation, StationPricingDetails } from '../utils/pricingSync';
 
-// Helper: Calculate rate per hour for a station device type and controller count
+// Helper: Calculate rate per hour or 30-min unit for a station device type and controller count
 export const getHourlyRate = async (deviceType: string, controllerCount: number = 1): Promise<number> => {
-  const norm = (deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
-  const isConsole = norm === 'PS5' || norm === 'PS4';
-  const isSim = norm === 'CAR_SIMULATOR' || norm === 'SIMULATOR';
-
-  if (isConsole) {
-    const rule = await prisma.pricingRule.findUnique({
-      where: {
-        deviceType_controllerCount: {
-          deviceType: norm,
-          controllerCount: Math.min(Math.max(controllerCount, 1), 4),
-        },
-      },
-    });
-    if (rule) return rule.hourlyRate;
-  } else if (isSim) {
-    const rule = await prisma.pricingRule.findFirst({
-      where: {
-        deviceType: { in: ['CAR_SIMULATOR', 'SIMULATOR'] },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (rule) return rule.hourlyRate;
-  } else {
-    const rule = await prisma.pricingRule.findFirst({
-      where: { deviceType: norm },
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (rule) return rule.hourlyRate;
-  }
-
-  // Fallback defaults
-  if (norm === 'PS5') return controllerCount === 2 ? 140 : 90;
-  if (norm === 'PS4') return controllerCount === 2 ? 110 : 70;
-  if (isSim) return 80;
-  return 70; // PC
+  const details = await getPricingRuleForStation(deviceType, controllerCount);
+  return details.configuredRate;
 };
 
 export const checkAvailability = async (req: Request, res: Response) => {
@@ -132,15 +100,32 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
     const stationRates: { stationId: number; appliedRatePerHour: number }[] = [];
 
     for (const st of stations) {
-      const isSim = st.deviceType === 'CAR_SIMULATOR' || st.deviceType === 'SIMULATOR';
-      const rate = await getHourlyRate(st.deviceType, controllerCount);
+      const pricingDetails = await getPricingRuleForStation(st.deviceType, controllerCount);
+      const isSim = pricingDetails.isSimulator;
+      const rate = pricingDetails.configuredRate;
       const stationGaming = isSim
         ? rate * (durationMinutes / 30)
         : rate * (durationMinutes / 60);
-      const appliedRatePerHour = isSim ? rate * 2 : rate;
+      const appliedRatePerHour = pricingDetails.appliedRatePerHour;
 
       stationRates.push({ stationId: st.id, appliedRatePerHour });
       gamingTotal += stationGaming;
+
+      // Safe Diagnostic Log per station (never log sensitive user data)
+      console.log('[BOOKING_PRICING_DEBUG]', {
+        timestamp: new Date().toISOString(),
+        selectedDeviceId: st.id,
+        selectedDeviceName: `Table ${st.tableNumber} (${st.deviceType})`,
+        tableNumber: st.tableNumber,
+        deviceType: st.deviceType,
+        retrievedPricingRecordId: pricingDetails.ruleId,
+        retrievedPricingDeviceType: pricingDetails.matchedRuleDeviceType,
+        retrievedConfiguredPrice: rate,
+        billingUnit: pricingDetails.billingUnit,
+        bookingDurationMinutes: durationMinutes,
+        calculatedStationGamingAmount: stationGaming,
+        appliedRatePerHour,
+      });
     }
 
     // 3. Calculate Food Total
@@ -200,6 +185,25 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
         foodItems: { include: { foodItem: true } },
         payments: true,
       },
+    });
+
+    // Safe Diagnostic Log for final saved booking
+    console.log('[BOOKING_CREATION_SAVED]', {
+      timestamp: new Date().toISOString(),
+      bookingId: newBooking.id,
+      bookingCode: newBooking.bookingCode,
+      totalStations: stations.length,
+      bookingDurationMinutes: durationMinutes,
+      calculatedGamingTotal: gamingTotal,
+      foodTotal,
+      discount: discount || 0,
+      calculatedGrandTotal: grandTotal,
+      finalAmountSavedInDatabase: newBooking.grandTotal,
+      savedGamingAmount: newBooking.gamingAmount,
+      savedStationRates: newBooking.stations.map((s) => ({
+        stationId: s.stationId,
+        appliedRatePerHour: s.appliedRatePerHour,
+      })),
     });
 
     // Mark stations as OCCUPIED if booking starts now
@@ -700,22 +704,34 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
     const remainingMs = effectiveEnd.getTime() - effectiveStart.getTime();
     const remainingMinutes = Math.max(Math.ceil(remainingMs / (1000 * 60)), 1);
 
-    const normType = (targetStation.deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
-    const isSim = normType === 'CAR_SIMULATOR' || normType === 'SIMULATOR';
-    const rate = await getHourlyRate(targetStation.deviceType, controllerCount);
+    const pricingDetails = await getPricingRuleForStation(targetStation.deviceType, controllerCount);
+    const isSim = pricingDetails.isSimulator;
+    const rate = pricingDetails.configuredRate;
 
     let additionalGaming = 0;
-    let appliedRatePerHour = rate;
+    const appliedRatePerHour = pricingDetails.appliedRatePerHour;
 
     if (isSim) {
       additionalGaming = Math.round(rate * (remainingMinutes / 30));
-      appliedRatePerHour = rate * 2;
     } else {
       additionalGaming = Math.round((rate * remainingMinutes) / 60);
-      appliedRatePerHour = rate;
     }
 
     additionalGaming = Math.max(0, additionalGaming);
+
+    console.log('[BOOKING_ADD_CONSOLE_DEBUG]', {
+      timestamp: new Date().toISOString(),
+      bookingId: booking.id,
+      bookingCode: booking.bookingCode,
+      addedStationId: targetStation.id,
+      addedTableNumber: targetStation.tableNumber,
+      addedDeviceType: targetStation.deviceType,
+      retrievedPricingRecordId: pricingDetails.ruleId,
+      retrievedConfiguredPrice: rate,
+      remainingMinutes,
+      additionalGaming,
+      appliedRatePerHour,
+    });
 
     const newGamingAmount = booking.gamingAmount + additionalGaming;
     const newGrandTotal = Math.max(0, newGamingAmount + booking.foodAmount - booking.discount);
