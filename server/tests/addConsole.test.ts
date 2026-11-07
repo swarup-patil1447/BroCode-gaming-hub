@@ -11,6 +11,7 @@ describe('Add Console to Existing Booking Test Suite', () => {
   let expiredBookingId: string;
   let completedBookingId: string;
   let cancelledBookingId: string;
+  const originalStationStatuses = new Map<number, string>();
 
   beforeAll(async () => {
     // 1. Setup Owner Account credentials
@@ -67,10 +68,22 @@ describe('Add Console to Existing Booking Test Suite', () => {
       create: { deviceType: 'PC', controllerCount: 1, hourlyRate: 70 },
     });
 
-    // Ensure stations 1-8 are AVAILABLE
-    await prisma.station.updateMany({
-      data: { status: 'AVAILABLE' },
-    });
+    const extraConsoles = [
+      { id: 9, tableNumber: 6, deviceType: 'CAR_SIMULATOR' },
+      { id: 10, tableNumber: 6, deviceType: 'CAR_SIMULATOR' },
+      { id: 11, tableNumber: 6, deviceType: 'CAR_SIMULATOR' },
+      { id: 12, tableNumber: 8, deviceType: 'PC' },
+      { id: 13, tableNumber: 7, deviceType: 'PC' },
+    ];
+    for (const station of extraConsoles) {
+      await prisma.station.upsert({
+        where: { id: station.id },
+        update: station,
+        create: { ...station, status: 'AVAILABLE' },
+      });
+    }
+    const stationStatuses = await prisma.station.findMany({ select: { id: true, status: true } });
+    stationStatuses.forEach((station) => originalStationStatuses.set(station.id, station.status));
   });
 
   afterAll(async () => {
@@ -84,9 +97,10 @@ describe('Add Console to Existing Booking Test Suite', () => {
     await prisma.booking.deleteMany({
       where: { customerName: { startsWith: 'AddConsole Customer' } },
     });
-    await prisma.station.updateMany({
-      data: { status: 'AVAILABLE' },
-    });
+    for (const [id, status] of originalStationStatuses) {
+      await prisma.station.update({ where: { id }, data: { status } });
+    }
+    await prisma.station.deleteMany({ where: { id: { in: [9, 10, 11, 12, 13] } } });
     // Ensure simulator rate remains 80
     await prisma.pricingRule.updateMany({
       where: { deviceType: { in: ['CAR_SIMULATOR', 'SIMULATOR'] } },
@@ -128,82 +142,108 @@ describe('Add Console to Existing Booking Test Suite', () => {
     expect(booking.grandTotal).toBe(160);
     expect(booking.stations.length).toBe(1);
 
-    // Employee adds Table 1 (PS5, ₹90/hr) for the remaining 30 minutes
-    // Remaining time is ~30 minutes -> ₹90 * (30 / 60) = ₹45
+    // Employee adds another console assigned to Table 6 for the remaining 30 minutes.
     const addRes = await request(app)
       .post(`/api/bookings/${activeBookingId}/add-console`)
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ stationId: 1, controllerCount: 1 });
+      .send({ stationId: 9, controllerCount: 1 });
 
     expect(addRes.status).toBe(200);
     const updated = addRes.body.data;
     expect(updated.stations.length).toBe(2);
-    expect(updated.stations.some((s: any) => s.stationId === 1)).toBe(true);
+    expect(updated.stations.some((s: any) => s.stationId === 9)).toBe(true);
     expect(updated.stations.some((s: any) => s.stationId === 6)).toBe(true);
 
-    // Gaming total should now be ₹160 + ₹45 = ₹205
-    expect(updated.gamingAmount).toBe(205);
-    expect(updated.grandTotal).toBe(205);
+    // Gaming total should now be ₹160 + ₹80 = ₹240
+    expect(updated.gamingAmount).toBe(240);
+    expect(updated.grandTotal).toBe(240);
 
-    // Newly added station should now be OCCUPIED
-    const st1 = await prisma.station.findUnique({ where: { id: 1 } });
-    expect(st1?.status).toBe('OCCUPIED');
+    const addedConsole = await prisma.station.findUnique({ where: { id: 9 } });
+    expect(addedConsole?.status).toBe('OCCUPIED');
   });
 
   it('3. Re-adding the same station to the booking is rejected (400)', async () => {
     const res = await request(app)
       .post(`/api/bookings/${activeBookingId}/add-console`)
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ stationId: 1 });
+      .send({ stationId: 9 });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('already part of this booking');
   });
 
-  it('4. Adding an unavailable station with an overlapping booking is rejected (409 Conflict)', async () => {
-    // Table 1 is already in use by activeBookingId.
-    // Create another booking and try to add Table 1 to it.
+  it('3a. Consoles assigned to another table are rejected by the API', async () => {
+    const res = await request(app)
+      .post(`/api/bookings/${activeBookingId}/add-console`)
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({ stationId: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('must be assigned to Table 6');
+  });
+
+  it('3b. Owners can add another console to the same table', async () => {
+    const now = new Date();
+    const booking = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'AddConsole Customer Owner',
+        customerMobile: '9988776690',
+        stationIds: [7],
+        startTime: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+        endTime: new Date(now.getTime() + 90 * 60 * 1000).toISOString(),
+      });
+
+    expect(booking.status).toBe(201);
+    const addRes = await request(app)
+      .post(`/api/bookings/${booking.body.data.id}/add-console`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ stationId: 13 });
+
+    expect(addRes.status).toBe(200);
+    expect(addRes.body.data.stations.some((station: any) => station.stationId === 13)).toBe(true);
+  });
+
+  it('4. Adding a same-table console reserved by another booking is rejected (409 Conflict)', async () => {
     const now = new Date();
     const startTime = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
     const endTime = new Date(now.getTime() + 20 * 60 * 1000).toISOString();
 
-    const otherRes = await request(app)
-      .post('/api/bookings')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({
-        customerName: 'AddConsole Customer 2',
+    const reservedBooking = await prisma.booking.create({
+      data: {
+        bookingCode: `BC-ADD-CONFLICT-${Date.now()}`,
+        customerName: 'AddConsole Customer Conflict',
         customerMobile: '9988776656',
-        stationIds: [7], // Table 7 (PC)
-        startTime,
-        endTime,
-      });
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        bookingStatus: 'ACTIVE',
+        stations: { create: [{ stationId: 10, appliedRatePerHour: 160 }] },
+      },
+    });
 
-    const otherBookingId = otherRes.body.data.id;
-
-    // Try to add Table 1 (already occupied by activeBookingId)
     const conflictRes = await request(app)
-      .post(`/api/bookings/${otherBookingId}/add-console`)
+      .post(`/api/bookings/${activeBookingId}/add-console`)
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ stationId: 1 });
+      .send({ stationId: 11 });
 
     expect(conflictRes.status).toBe(409);
     expect(conflictRes.body.error).toContain('conflict detected with');
+    expect(reservedBooking.customerName).toContain('AddConsole Customer');
   });
 
   it('5. Adding a station currently under MAINTENANCE is rejected (409 Conflict)', async () => {
-    // Put Table 2 into MAINTENANCE
-    await prisma.station.update({ where: { id: 2 }, data: { status: 'MAINTENANCE' } });
+    await prisma.station.update({ where: { id: 11 }, data: { status: 'MAINTENANCE' } });
 
     const res = await request(app)
       .post(`/api/bookings/${activeBookingId}/add-console`)
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ stationId: 2 });
+      .send({ stationId: 11 });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('maintenance');
 
-    // Restore Table 2
-    await prisma.station.update({ where: { id: 2 }, data: { status: 'AVAILABLE' } });
+    await prisma.station.update({ where: { id: 11 }, data: { status: 'AVAILABLE' } });
   });
 
   it('6. Adding console when customer previously paid in full transitions paymentStatus to PARTIAL', async () => {
@@ -242,11 +282,11 @@ describe('Add Console to Existing Booking Test Suite', () => {
     const paidBooking = await prisma.booking.findUnique({ where: { id: bookingId } });
     expect(paidBooking?.paymentStatus).toBe('PAID');
 
-    // Now employee adds Table 3 (PS4, ₹70/hr)
+    // Add a console assigned to the same table, using that console's configured rate.
     const addRes = await request(app)
       .post(`/api/bookings/${bookingId}/add-console`)
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ stationId: 3, controllerCount: 1 });
+      .send({ stationId: 12, controllerCount: 1 });
 
     expect(addRes.status).toBe(200);
     const updated = addRes.body.data;

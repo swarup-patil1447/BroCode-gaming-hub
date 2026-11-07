@@ -73,10 +73,23 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
     const durationMinutes = Math.max(Math.round((end.getTime() - start.getTime()) / (1000 * 60)), 30);
     const durationHours = durationMinutes / 60;
 
-    // 1. Conflict Check
+    // 1. Resolve selected stations and check availability across their whole table.
+    const stations = await prisma.station.findMany({
+      where: { id: { in: stationIds } },
+    });
+    if (stations.length !== new Set(stationIds).size) {
+      return res.status(400).json({ error: 'One or more selected consoles were not found' });
+    }
+
+    const tableNumbers = Array.from(new Set(stations.map((station) => station.tableNumber)));
+    const tableStations = await prisma.station.findMany({
+      where: { tableNumber: { in: tableNumbers } },
+      select: { id: true },
+    });
+
     const conflicts = await prisma.bookingStation.findMany({
       where: {
-        stationId: { in: stationIds },
+        stationId: { in: tableStations.map((station) => station.id) },
         booking: {
           bookingStatus: { in: ['ACTIVE', 'UPCOMING'] },
           startTime: { lt: end },
@@ -91,11 +104,7 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
       return res.status(409).json({ error: `Conflict detected on ${conflictTables} for the requested time.` });
     }
 
-    // 2. Fetch stations and calculate gaming total with dynamic rates
-    const stations = await prisma.station.findMany({
-      where: { id: { in: stationIds } },
-    });
-
+    // 2. Calculate gaming total using the configured database prices.
     let gamingTotal = 0;
     const stationRates: { stationId: number; appliedRatePerHour: number }[] = [];
 
@@ -662,12 +671,21 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Station Table ${sId} is already part of this booking` });
     }
 
+    const bookingTableNumber = booking.stations[0]?.station.tableNumber;
+    if (bookingTableNumber === undefined) {
+      return res.status(400).json({ error: 'Booking has no table assigned' });
+    }
+
     const targetStation = await prisma.station.findUnique({
       where: { id: sId },
     });
 
     if (!targetStation) {
       return res.status(404).json({ error: 'Station not found' });
+    }
+
+    if (targetStation.tableNumber !== bookingTableNumber) {
+      return res.status(400).json({ error: `Additional consoles must be assigned to Table ${bookingTableNumber}` });
     }
 
     if (targetStation.status === 'MAINTENANCE') {
@@ -678,9 +696,15 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
     const effectiveStart = now > booking.startTime ? now : booking.startTime;
     const effectiveEnd = booking.endTime;
 
+    const sameTableStations = await prisma.station.findMany({
+      where: { tableNumber: bookingTableNumber },
+      select: { id: true },
+    });
+    const sameTableStationIds = sameTableStations.map((station) => station.id);
+
     const conflicts = await prisma.bookingStation.findMany({
       where: {
-        stationId: sId,
+        stationId: { in: sameTableStationIds },
         booking: {
           id: { not: booking.id },
           bookingStatus: { in: ['ACTIVE', 'UPCOMING'] },
@@ -693,6 +717,10 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
         booking: true,
       },
     });
+
+    if (targetStation.status === 'OCCUPIED' && effectiveStart <= now) {
+      return res.status(409).json({ error: `Table ${targetStation.tableNumber} console is currently occupied` });
+    }
 
     if (conflicts.length > 0) {
       return res.status(409).json({
@@ -781,7 +809,7 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
           },
         },
       });
-    });
+    }, { isolationLevel: 'Serializable' });
 
     if (req.user) {
       await createAuditLog({

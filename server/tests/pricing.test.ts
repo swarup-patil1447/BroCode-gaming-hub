@@ -67,17 +67,17 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
   });
 
   afterAll(async () => {
-    // Clean up any test bookings
-    await prisma.bookingStation.deleteMany({});
-    await prisma.bookingFoodItem.deleteMany({});
-    await prisma.payment.deleteMany({});
+    const testBookingFilter = {
+      OR: [
+        { customerName: { startsWith: 'Test Sim Customer' } },
+        { customerName: { startsWith: 'Test PS5 Customer' } },
+      ],
+    };
+    await prisma.bookingStation.deleteMany({ where: { booking: testBookingFilter } });
+    await prisma.bookingFoodItem.deleteMany({ where: { booking: testBookingFilter } });
+    await prisma.payment.deleteMany({ where: { booking: testBookingFilter } });
     await prisma.booking.deleteMany({
-      where: {
-        OR: [
-          { customerName: { startsWith: 'Test Sim Customer' } },
-          { customerName: { startsWith: 'Test PS5 Customer' } },
-        ],
-      },
+      where: testBookingFilter,
     });
     // Restore CAR_SIMULATOR and SIMULATOR back to configured 80
     await prisma.pricingRule.updateMany({
@@ -251,6 +251,36 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     expect(booking.gamingAmount).toBe(95);
     expect(booking.grandTotal).toBe(95);
     expect(booking.stations[0].appliedRatePerHour).toBe(190);
+  });
+
+  it('8a. New bookings use the canonical database rate when the legacy alias is stale', async () => {
+    await prisma.pricingRule.update({
+      where: { deviceType_controllerCount: { deviceType: 'CAR_SIMULATOR', controllerCount: 1 } },
+      data: { hourlyRate: 83 },
+    });
+    await prisma.pricingRule.update({
+      where: { deviceType_controllerCount: { deviceType: 'SIMULATOR', controllerCount: 1 } },
+      data: { hourlyRate: 50 },
+    });
+
+    const now = new Date();
+    const startTime = new Date(now.getTime() + 180 * 60 * 1000).toISOString();
+    const endTime = new Date(now.getTime() + 210 * 60 * 1000).toISOString();
+    const bookingRes = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'Test Sim Customer Canonical Rate',
+        customerMobile: '9876543214',
+        stationIds: [6],
+        startTime,
+        endTime,
+      });
+
+    expect(bookingRes.status).toBe(201);
+    expect(bookingRes.body.data.gamingAmount).toBe(83);
+    expect(bookingRes.body.data.grandTotal).toBe(83);
+    expect(bookingRes.body.data.stations[0].appliedRatePerHour).toBe(166);
   });
 
   it('9. Existing bookings preserve their historical booked rates after price change', async () => {

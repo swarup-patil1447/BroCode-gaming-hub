@@ -72,10 +72,31 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
     return new Set(booking.stations.map((s) => s.stationId));
   }, [booking]);
 
-  // Filter available candidate stations
+  const bookingTableNumber = booking?.stations[0]?.station.tableNumber;
+
+  // Only show unassigned consoles on this booking's table that are free for its remaining time.
   const candidateStations = useMemo(() => {
-    return stations.filter((st) => !assignedStationIds.has(st.id));
-  }, [stations, assignedStationIds]);
+    if (!booking || bookingTableNumber === undefined) return [];
+
+    const now = new Date();
+    const start = new Date(booking.startTime);
+    const end = new Date(booking.endTime);
+    const effectiveStart = booking.bookingStatus === 'ACTIVE' && now > start ? now : start;
+
+    return stations.filter((st) => {
+      if (st.tableNumber !== bookingTableNumber || assignedStationIds.has(st.id)) return false;
+      if (st.status === 'MAINTENANCE' || st.status === 'OCCUPIED') return false;
+      if (st.isOccupied && st.currentBooking?.id !== booking.id) return false;
+
+      const hasOverlappingReservation = (st.upcomingBookings || []).some((reservation) => {
+        const reservedStart = new Date(reservation.startTime);
+        const reservedEnd = new Date(reservation.endTime);
+        return reservedStart < end && reservedEnd > effectiveStart;
+      });
+
+      return !hasOverlappingReservation;
+    });
+  }, [stations, assignedStationIds, booking, bookingTableNumber]);
 
   // Find currently selected candidate station
   const selectedStation = useMemo(() => {
@@ -120,8 +141,6 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
           : controllerCount === 4
           ? 190
           : 70
-        : isSim
-        ? 80
         : 70;
 
     const baseRate = rule ? rule.hourlyRate : fallbackRate;
@@ -282,7 +301,7 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
             <p className="text-xs text-slate-400 py-6 text-center">Loading gaming stations...</p>
           ) : candidateStations.length === 0 ? (
             <div className="p-4 rounded-xl bg-dark-950 border border-slate-800 text-center text-xs text-slate-400">
-              No additional stations available to add. All other tables are currently booked or assigned.
+              No additional consoles available on this table.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto p-1">
@@ -293,11 +312,12 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
                 // Preview charge
                 const norm = (st.deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
                 const isSim = norm === 'CAR_SIMULATOR' || norm === 'SIMULATOR';
-                const rule = pricingRules.find((r) => r.deviceType === norm);
+                const rule = isSim
+                  ? pricingRules.find((r) => r.deviceType === 'CAR_SIMULATOR') ||
+                    pricingRules.find((r) => r.deviceType === 'SIMULATOR')
+                  : pricingRules.find((r) => r.deviceType === norm);
                 const rate = rule
                   ? rule.hourlyRate
-                  : isSim
-                  ? 80
                   : norm === 'PS5'
                   ? 90
                   : 70;

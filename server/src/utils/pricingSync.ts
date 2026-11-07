@@ -150,20 +150,32 @@ export async function getPricingRuleForStation(
 
   if (isSim) {
     // Prioritize canonical CAR_SIMULATOR rule
-    let rule = await prisma.pricingRule.findFirst({
-      where: { deviceType: 'CAR_SIMULATOR', controllerCount: 1 },
-      orderBy: { updatedAt: 'desc' },
+    let rule = await prisma.pricingRule.findUnique({
+      where: {
+        deviceType_controllerCount: {
+          deviceType: 'CAR_SIMULATOR',
+          controllerCount: 1,
+        },
+      },
     });
 
     // If not found, check legacy SIMULATOR rule
     if (!rule) {
-      rule = await prisma.pricingRule.findFirst({
-        where: { deviceType: 'SIMULATOR', controllerCount: 1 },
-        orderBy: { updatedAt: 'desc' },
+      rule = await prisma.pricingRule.findUnique({
+        where: {
+          deviceType_controllerCount: {
+            deviceType: 'SIMULATOR',
+            controllerCount: 1,
+          },
+        },
       });
     }
 
-    const rate = rule ? rule.hourlyRate : 80;
+    if (!rule) {
+      throw new Error(`No pricing rule configured for ${deviceType}`);
+    }
+
+    const rate = rule.hourlyRate;
     return {
       ruleId: rule?.id || null,
       queriedDeviceType: deviceType,

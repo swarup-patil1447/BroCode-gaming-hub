@@ -30,7 +30,7 @@ model User {
 
 model Station {
   id              Int              @id
-  tableNumber     Int              @unique
+  tableNumber     Int
   deviceType      String
   status          String           @default("AVAILABLE")
   createdAt       DateTime         @default(now())
@@ -39,6 +39,7 @@ model Station {
 
   @@index([deviceType])
   @@index([status])
+  @@index([tableNumber])
 }
 
 model PricingRule {
