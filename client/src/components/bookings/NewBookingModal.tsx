@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Station, FoodItem, PricingRule } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import { formatCurrency, formatTime, getDeviceColor, getDeviceLabel } from '../../lib/utils';
+import { formatCurrency, formatTime, getDeviceColor, getDeviceLabel, groupStationsByTable } from '../../lib/utils';
 import { Gamepad2, Clock, Plus, Minus, UtensilsCrossed, AlertTriangle, Check } from 'lucide-react';
 
 interface NewBookingModalProps {
@@ -47,6 +47,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     queryFn: () => api.stations.getAll(),
     enabled: isOpen,
   });
+  const tableStations = useMemo(() => groupStationsByTable(stations), [stations]);
 
   const { data: pricingRules = [] } = useQuery({
     queryKey: ['pricing'],
@@ -60,21 +61,32 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     enabled: isOpen,
   });
 
+  const startDate = new Date(startDateTime);
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+  const getReservationForRequestedTime = (station: Station) => {
+    const reservations = [...(station.upcomingBookings || [])];
+    if (station.currentBooking) reservations.push(station.currentBooking);
+
+    return reservations.find((reservation) => {
+      const reservedStart = new Date(reservation.startTime);
+      const reservedEnd = new Date(reservation.endTime);
+      return reservedStart < endDate && reservedEnd > startDate;
+    });
+  };
+  const isUnavailableForRequestedTime = (station: Station) =>
+    station.status === 'MAINTENANCE' || !!getReservationForRequestedTime(station);
+
   useEffect(() => {
     if (isOpen) {
       if (preSelectedStationId) {
         setSelectedStationIds([preSelectedStationId]);
-      } else if (selectedStationIds.length === 0 && stations.length > 0) {
-        const firstAvail = stations.find((s) => !s.isOccupied && s.status !== 'MAINTENANCE');
+      } else if (selectedStationIds.length === 0 && tableStations.length > 0) {
+        const firstAvail = tableStations.find((station) => !isUnavailableForRequestedTime(station));
         if (firstAvail) setSelectedStationIds([firstAvail.id]);
       }
       setConflictError(null);
     }
-  }, [isOpen, preSelectedStationId, stations]);
-
-  // Calculate End Time
-  const startDate = new Date(startDateTime);
-  const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+  }, [isOpen, preSelectedStationId, tableStations]);
 
   // Toggle station selection for multi-station booking
   const toggleStation = (id: number) => {
@@ -129,7 +141,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     };
   };
 
-  const selectedStations = stations.filter((s) => selectedStationIds.includes(s.id));
+  const selectedStations = tableStations.filter((s) => selectedStationIds.includes(s.id));
   const hasConsole = selectedStations.some(
     (s) => s.deviceType === 'PS5' || s.deviceType === 'PS4'
   );
@@ -211,6 +223,18 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
       setConflictError('Please select at least one gaming station');
       return;
     }
+    const conflictingStation = tableStations.find(
+      (station) =>
+        selectedStationIds.includes(station.id) && isUnavailableForRequestedTime(station)
+    );
+    if (conflictingStation) {
+      setConflictError(
+        conflictingStation.status === 'MAINTENANCE'
+          ? `Table ${conflictingStation.tableNumber} is under maintenance. Select a different table.`
+          : `Table ${conflictingStation.tableNumber} is already booked during the selected time. Choose a different time or table.`
+      );
+      return;
+    }
     createBookingMutation.mutate();
   };
 
@@ -261,17 +285,22 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {stations.map((st) => {
+            {tableStations.map((st) => {
               const isSelected = selectedStationIds.includes(st.id);
+              const reservation = getReservationForRequestedTime(st);
+              const isUnavailable = st.status === 'MAINTENANCE' || !!reservation;
               return (
                 <div
                   key={st.id}
-                  onClick={() => toggleStation(st.id)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                  onClick={() => {
+                    if (!isSelected && isUnavailable) return;
+                    toggleStation(st.id);
+                  }}
+                  className={`p-3 rounded-xl border transition-all ${
                     isSelected
                       ? 'bg-cyber-cyan/15 border-cyber-cyan shadow-glow-cyan/20'
-                      : st.isOccupied
-                      ? 'bg-dark-950/70 border-slate-800 opacity-80'
+                      : isUnavailable
+                      ? 'bg-dark-950/70 border-slate-800 opacity-55 cursor-not-allowed'
                       : 'bg-dark-900 border-slate-800 hover:border-slate-600'
                   }`}
                 >
@@ -293,12 +322,16 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
                   </p>
 
                   <div className="mt-2 text-[10px]">
-                    {st.isOccupied ? (
+                    {st.status === 'MAINTENANCE' ? (
+                      <span className="text-cyber-red font-medium">Under maintenance</span>
+                    ) : reservation ? (
                       <span className="text-cyber-red font-medium">
-                        Busy • Free at {st.nextAvailableTime || 'soon'}
+                        Booked {formatTime(reservation.startTime)} - {formatTime(reservation.endTime)}
+                        <br />
+                        Overlaps selected time
                       </span>
                     ) : (
-                      <span className="text-cyber-green font-medium">Available Now</span>
+                      <span className="text-cyber-green font-medium">Available for selected time</span>
                     )}
                   </div>
                 </div>
@@ -346,7 +379,10 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
             label="Start Date & Time *"
             type="datetime-local"
             value={startDateTime}
-            onChange={(e) => setStartDateTime(e.target.value)}
+            onChange={(e) => {
+              setStartDateTime(e.target.value);
+              setConflictError(null);
+            }}
             required
           />
 
@@ -359,7 +395,10 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
                 <button
                   key={mins}
                   type="button"
-                  onClick={() => setDurationMinutes(mins)}
+                  onClick={() => {
+                    setDurationMinutes(mins);
+                    setConflictError(null);
+                  }}
                   className={`py-2 px-1 text-xs font-bold rounded-xl transition-all ${
                     durationMinutes === mins
                       ? 'bg-cyber-cyan text-dark-950 shadow-glow-cyan/30'

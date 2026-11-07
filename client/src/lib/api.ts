@@ -191,6 +191,13 @@ export const api = {
       });
     },
 
+    registerConsole: async (tableNumber: number) => {
+      return request<Station>('/stations', {
+        method: 'POST',
+        body: JSON.stringify({ tableNumber }),
+      });
+    },
+
     updateStatus: async (id: number | string, status: string) => {
       return request<Station>(`/stations/${id}/status`, {
         method: 'PUT',

@@ -173,6 +173,60 @@ export const getAllStations = async (req: Request, res: Response) => {
   }
 };
 
+export const registerConsole = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can register an additional console' });
+    }
+
+    const tableNumber = Number(req.body.tableNumber);
+    if (!Number.isInteger(tableNumber) || tableNumber < 1) {
+      return res.status(400).json({ error: 'A valid table number is required' });
+    }
+
+    const station = await prisma.$transaction(async (tx) => {
+      const tableStation = await tx.station.findFirst({
+        where: { tableNumber },
+        orderBy: { id: 'asc' },
+      });
+      if (!tableStation) {
+        throw new Error(`Table ${tableNumber} was not found`);
+      }
+
+      const maxStation = await tx.station.aggregate({ _max: { id: true } });
+      return tx.station.create({
+        data: {
+          id: (maxStation._max.id || 0) + 1,
+          tableNumber,
+          deviceType: tableStation.deviceType,
+          status: 'AVAILABLE',
+        },
+      });
+    }, { isolationLevel: 'Serializable' });
+
+    if (req.user) {
+      await createAuditLog({
+        userId: req.user.id,
+        userName: req.user.name,
+        userEmpId: req.user.employeeId,
+        role: req.user.role,
+        action: 'STATION_CONSOLE_REGISTER',
+        target: `Table ${tableNumber}`,
+        newValue: `Registered additional ${station.deviceType} console (ID ${station.id})`,
+      });
+    }
+
+    emitToAll('station_updated', station);
+    emitToAll('station.updated', station);
+    return res.status(201).json({ data: station });
+  } catch (err: any) {
+    if (err.message?.includes('was not found')) {
+      return res.status(404).json({ error: err.message });
+    }
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export const updateStationStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

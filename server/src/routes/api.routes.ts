@@ -29,6 +29,7 @@ router.get('/auth/dev-sms-logs', authCtrl.getDevSMSLogs);
 
 // Station routes
 router.get('/stations', stationCtrl.getAllStations);
+router.post('/stations', authenticate as any, requireOwner as any, stationCtrl.registerConsole as any);
 router.put('/stations/:id/status', authenticate as any, stationCtrl.updateStationStatus as any);
 
 // Booking routes

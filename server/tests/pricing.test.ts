@@ -165,6 +165,10 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
       where: { deviceType: 'CAR_SIMULATOR', controllerCount: 1 },
     });
     expect(dbRule?.hourlyRate).toBe(targetRate);
+    const legacyDbRule = await prisma.pricingRule.findUnique({
+      where: { deviceType_controllerCount: { deviceType: 'SIMULATOR', controllerCount: 1 } },
+    });
+    expect(legacyDbRule?.hourlyRate).toBe(targetRate);
 
     // Verify stations 5 & 6 use CAR_SIMULATOR
     const stations = await prisma.station.findMany({ where: { id: { in: [5, 6] } } });
@@ -174,6 +178,7 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
   });
 
   it('6. Newly confirmed 30-minute booking on car simulator uses the correct ₹80 base rate', async () => {
+    await prisma.station.update({ where: { id: 6 }, data: { deviceType: 'SIMULATOR' } });
     const now = new Date();
     const startTime = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
     const endTime = new Date(now.getTime() + 40 * 60 * 1000).toISOString(); // 30 minutes duration
@@ -184,7 +189,7 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
       .send({
         customerName: 'Test Sim Customer',
         customerMobile: '9876543210',
-        stationIds: [5], // Table 5: Car Simulator
+        stationIds: [6], // Table 6 may still use the legacy SIMULATOR label
         controllerCount: 1,
         startTime,
         endTime,
@@ -195,6 +200,7 @@ describe('BroCode Device Pricing and Car Simulator Updates Test Suite', () => {
     expect(booking.gamingAmount).toBe(80);
     expect(booking.grandTotal).toBe(80);
     expect(booking.stations[0].appliedRatePerHour).toBe(160); // 80 per 30 mins = 160 per hr
+    await prisma.station.update({ where: { id: 6 }, data: { deviceType: 'CAR_SIMULATOR' } });
   });
 
   it('7. 60-minute car simulator booking uses ₹160 (2 units of 30 mins)', async () => {

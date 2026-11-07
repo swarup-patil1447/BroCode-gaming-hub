@@ -1,5 +1,6 @@
 import React from 'react';
 import { Station } from '../../types';
+import { groupStationsByTable } from '../../lib/utils';
 import { StationCard } from './StationCard';
 import { Spinner } from '../ui/Feedback';
 
@@ -33,7 +34,7 @@ export const StationGrid: React.FC<StationGridProps> = ({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-      {stations.map((station) => (
+      {groupStationsByTable(stations).map((station) => (
         <StationCard
           key={station.id}
           station={station}

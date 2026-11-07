@@ -1,8 +1,45 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Station } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function groupStationsByTable(stations: Station[]): Station[] {
+  const grouped = new Map<number, Station[]>();
+  stations.forEach((station) => {
+    const group = grouped.get(station.tableNumber) || [];
+    group.push(station);
+    grouped.set(station.tableNumber, group);
+  });
+
+  return Array.from(grouped.entries()).map(([tableNumber, group]) => {
+    const active = group.find((station) => station.isOccupied && station.currentBooking);
+    const reservations = Array.from(
+      new Map(group.flatMap((station) => station.upcomingBookings || []).map((booking) => [booking.id, booking])).values()
+    ).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    const representative = group.find((station) => station.status !== 'MAINTENANCE') || group[0];
+
+    return {
+      ...representative,
+      status: (group.every((station) => station.status === 'MAINTENANCE')
+        ? 'MAINTENANCE'
+        : active
+        ? 'OCCUPIED'
+        : 'AVAILABLE') as Station['status'],
+      isOccupied: !!active,
+      remainingSeconds: active?.remainingSeconds || 0,
+      nextAvailableTime: active?.nextAvailableTime || 'Available Now',
+      nextAvailableTimestamp: active?.nextAvailableTimestamp,
+      availableUntil: reservations[0] ? formatTime(reservations[0].startTime) : null,
+      upcomingBookingsCount: reservations.length,
+      currentBooking: active?.currentBooking || null,
+      nextUpcomingBooking: reservations[0] || null,
+      upcomingBookings: reservations,
+      tableNumber,
+    };
+  }).sort((a, b) => a.tableNumber - b.tableNumber);
 }
 
 export function formatCurrency(amount: number | string | undefined | null): string {

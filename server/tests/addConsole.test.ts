@@ -97,6 +97,7 @@ describe('Add Console to Existing Booking Test Suite', () => {
     await prisma.booking.deleteMany({
       where: { customerName: { startsWith: 'AddConsole Customer' } },
     });
+    await prisma.station.deleteMany({ where: { id: 14 } });
     for (const [id, status] of originalStationStatuses) {
       await prisma.station.update({ where: { id }, data: { status } });
     }
@@ -114,6 +115,24 @@ describe('Add Console to Existing Booking Test Suite', () => {
       .post('/api/bookings/some-id/add-console')
       .send({ stationId: 1 });
     expect(res.status).toBe(401);
+  });
+
+  it('1a. Owners can register a physical console on a table and employees cannot', async () => {
+    const denied = await request(app)
+      .post('/api/stations')
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({ tableNumber: 4 });
+    expect(denied.status).toBe(403);
+
+    const registered = await request(app)
+      .post('/api/stations')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ tableNumber: 4 });
+
+    expect(registered.status).toBe(201);
+    expect(registered.body.data.tableNumber).toBe(4);
+    expect(registered.body.data.deviceType).toBe('PS4');
+    expect(registered.body.data.status).toBe('AVAILABLE');
   });
 
   it('2. Adding a console calculates prorated remaining duration correctly and updates grandTotal', async () => {

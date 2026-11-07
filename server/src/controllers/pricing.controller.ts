@@ -51,36 +51,33 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
     const canonicalDeviceType = isSimulator ? 'CAR_SIMULATOR' : trimmedDeviceType;
     const finalControllerCount = isSimulator ? 1 : parsedControllerCount;
 
-    // Find existing rule for oldRate calculation
-    const existing = await prisma.pricingRule.findFirst({
-      where: {
-        deviceType: canonicalDeviceType,
-        controllerCount: finalControllerCount,
-      },
-    });
+    const { updated, oldRate } = await prisma.$transaction(async (tx) => {
+      const existing = await tx.pricingRule.findUnique({
+        where: {
+          deviceType_controllerCount: {
+            deviceType: canonicalDeviceType,
+            controllerCount: finalControllerCount,
+          },
+        },
+      });
 
-    const oldRate = existing ? existing.hourlyRate : null;
-
-    // Upsert canonical pricing rule
-    const updated = await prisma.pricingRule.upsert({
-      where: {
-        deviceType_controllerCount: {
+      const canonicalRule = await tx.pricingRule.upsert({
+        where: {
+          deviceType_controllerCount: {
+            deviceType: canonicalDeviceType,
+            controllerCount: finalControllerCount,
+          },
+        },
+        update: { hourlyRate: numRate },
+        create: {
           deviceType: canonicalDeviceType,
           controllerCount: finalControllerCount,
+          hourlyRate: numRate,
         },
-      },
-      update: { hourlyRate: numRate },
-      create: {
-        deviceType: canonicalDeviceType,
-        controllerCount: finalControllerCount,
-        hourlyRate: numRate,
-      },
-    });
+      });
 
-    // If updating simulator, also synchronize legacy 'SIMULATOR' record and stations
-    if (isSimulator) {
-      try {
-        await prisma.pricingRule.upsert({
+      if (isSimulator) {
+        await tx.pricingRule.upsert({
           where: {
             deviceType_controllerCount: {
               deviceType: 'SIMULATOR',
@@ -95,8 +92,8 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
           },
         });
 
-        // Ensure stations 5 and 6 use CAR_SIMULATOR
-        await prisma.station.updateMany({
+        // Normalize legacy station names in the same transaction as both price records.
+        await tx.station.updateMany({
           where: {
             OR: [
               { id: { in: [5, 6] } },
@@ -106,10 +103,10 @@ export const updatePricing = async (req: AuthRequest, res: Response) => {
           },
           data: { deviceType: 'CAR_SIMULATOR' },
         });
-      } catch (syncErr) {
-        console.warn('Note: Simulator alias sync non-critical warning:', syncErr);
       }
-    }
+
+      return { updated: canonicalRule, oldRate: existing?.hourlyRate ?? null };
+    });
 
     // 5. Audit Logging
     if (req.user) {
