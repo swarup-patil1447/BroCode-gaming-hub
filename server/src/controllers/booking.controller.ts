@@ -732,15 +732,34 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
     const remainingMs = effectiveEnd.getTime() - effectiveStart.getTime();
     const remainingMinutes = Math.max(Math.ceil(remainingMs / (1000 * 60)), 1);
 
-    const pricingDetails = await getPricingRuleForStation(targetStation.deviceType, controllerCount);
+    const normalizedDeviceType = targetStation.deviceType.toUpperCase().trim().replace(/[\s-]+/g, '_');
+    const isPlayerPricedConsole = normalizedDeviceType === 'PS5' || normalizedDeviceType === 'PS4';
+    const requestedControllerCount = Number(controllerCount);
+    if (isPlayerPricedConsole && (!Number.isInteger(requestedControllerCount) || requestedControllerCount < 1 || requestedControllerCount > 4)) {
+      return res.status(400).json({ error: 'Controller count must be between 1 and 4' });
+    }
+
+    const pricingDetails = await getPricingRuleForStation(targetStation.deviceType, requestedControllerCount);
     const isSim = pricingDetails.isSimulator;
     const rate = pricingDetails.configuredRate;
 
     let additionalGaming = 0;
-    const appliedRatePerHour = pricingDetails.appliedRatePerHour;
+    let appliedRatePerHour = pricingDetails.appliedRatePerHour;
+    const currentTableRatePerHour = booking.stations
+      .filter((stationBooking) => stationBooking.station.tableNumber === bookingTableNumber)
+      .reduce((total, stationBooking) => total + stationBooking.appliedRatePerHour, 0);
+
+    if (isPlayerPricedConsole && pricingDetails.appliedRatePerHour <= currentTableRatePerHour) {
+      return res.status(400).json({ error: 'Choose a higher player count to add a console' });
+    }
 
     if (isSim) {
       additionalGaming = Math.round(rate * (remainingMinutes / 30));
+    } else if (isPlayerPricedConsole) {
+      // Controller pricing is a total rate for the table. Charge only the increase
+      // over the hourly rate already represented by this booking's table stations.
+      appliedRatePerHour = Math.max(pricingDetails.appliedRatePerHour - currentTableRatePerHour, 0);
+      additionalGaming = Math.round((appliedRatePerHour * remainingMinutes) / 60);
     } else {
       additionalGaming = Math.round((rate * remainingMinutes) / 60);
     }
@@ -756,6 +775,7 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
       addedDeviceType: targetStation.deviceType,
       retrievedPricingRecordId: pricingDetails.ruleId,
       retrievedConfiguredPrice: rate,
+      currentTableRatePerHour,
       remainingMinutes,
       additionalGaming,
       appliedRatePerHour,
@@ -797,6 +817,7 @@ export const addConsoleToBooking = async (req: AuthRequest, res: Response) => {
           gamingAmount: newGamingAmount,
           grandTotal: newGrandTotal,
           paymentStatus: newPaymentStatus,
+          ...(isPlayerPricedConsole ? { controllerCount: requestedControllerCount } : {}),
         },
         include: {
           createdBy: { select: { id: true, name: true, employeeId: true, role: true } },

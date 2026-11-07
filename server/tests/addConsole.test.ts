@@ -63,6 +63,11 @@ describe('Add Console to Existing Booking Test Suite', () => {
       create: { deviceType: 'PS5', controllerCount: 1, hourlyRate: 90 },
     });
     await prisma.pricingRule.upsert({
+      where: { deviceType_controllerCount: { deviceType: 'PS5', controllerCount: 2 } },
+      update: { hourlyRate: 140 },
+      create: { deviceType: 'PS5', controllerCount: 2, hourlyRate: 140 },
+    });
+    await prisma.pricingRule.upsert({
       where: { deviceType_controllerCount: { deviceType: 'PC', controllerCount: 1 } },
       update: { hourlyRate: 70 },
       create: { deviceType: 'PC', controllerCount: 1, hourlyRate: 70 },
@@ -74,6 +79,7 @@ describe('Add Console to Existing Booking Test Suite', () => {
       { id: 11, tableNumber: 6, deviceType: 'CAR_SIMULATOR' },
       { id: 12, tableNumber: 8, deviceType: 'PC' },
       { id: 13, tableNumber: 7, deviceType: 'PC' },
+      { id: 15, tableNumber: 1, deviceType: 'PS5' },
     ];
     for (const station of extraConsoles) {
       await prisma.station.upsert({
@@ -97,11 +103,11 @@ describe('Add Console to Existing Booking Test Suite', () => {
     await prisma.booking.deleteMany({
       where: { customerName: { startsWith: 'AddConsole Customer' } },
     });
-    await prisma.station.deleteMany({ where: { id: 14 } });
+    await prisma.station.deleteMany({ where: { id: { in: [14, 16] } } });
     for (const [id, status] of originalStationStatuses) {
       await prisma.station.update({ where: { id }, data: { status } });
     }
-    await prisma.station.deleteMany({ where: { id: { in: [9, 10, 11, 12, 13] } } });
+    await prisma.station.deleteMany({ where: { id: { in: [9, 10, 11, 12, 13, 15] } } });
     // Ensure simulator rate remains 80
     await prisma.pricingRule.updateMany({
       where: { deviceType: { in: ['CAR_SIMULATOR', 'SIMULATOR'] } },
@@ -133,6 +139,37 @@ describe('Add Console to Existing Booking Test Suite', () => {
     expect(registered.body.data.tableNumber).toBe(4);
     expect(registered.body.data.deviceType).toBe('PS4');
     expect(registered.body.data.status).toBe('AVAILABLE');
+  });
+
+  it('1b. Adding a second PS5 charges only the configured 1P-to-2P rate difference', async () => {
+    const now = new Date();
+    const bookingRes = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        customerName: 'AddConsole Customer PS5 Tier',
+        customerMobile: '9988776688',
+        stationIds: [1],
+        controllerCount: 1,
+        startTime: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
+        endTime: new Date(now.getTime() + 70 * 60 * 1000).toISOString(),
+      });
+
+    expect(bookingRes.status).toBe(201);
+    expect(bookingRes.body.data.grandTotal).toBe(90);
+
+    const addRes = await request(app)
+      .post(`/api/bookings/${bookingRes.body.data.id}/add-console`)
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({ stationId: 15, controllerCount: 2 });
+
+    expect(addRes.status).toBe(200);
+    expect(addRes.body.data.grandTotal).toBe(140);
+    expect(addRes.body.data.gamingAmount).toBe(140);
+    expect(addRes.body.data.controllerCount).toBe(2);
+    const addedStation = addRes.body.data.stations.find((station: any) => station.stationId === 15);
+    expect(addedStation.appliedRatePerHour).toBe(50);
+    expect(addRes.body.addedStation.additionalCharge).toBe(50);
   });
 
   it('2. Adding a console calculates prorated remaining duration correctly and updates grandTotal', async () => {

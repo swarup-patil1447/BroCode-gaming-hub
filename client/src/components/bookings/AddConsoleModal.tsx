@@ -38,7 +38,7 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
 
   useEffect(() => {
     if (isOpen && booking) {
-      setControllerCount(Math.min(Math.max(booking.controllerCount || 1, 1), 4));
+      setControllerCount(Math.min(Math.max((booking.controllerCount || 1) + 1, 1), 4));
       setSelectedStationId(null);
       setFormError(null);
       setSuccessMessage(null);
@@ -113,6 +113,13 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
     return stations.find((st) => st.id === selectedStationId) || null;
   }, [stations, selectedStationId]);
 
+  const currentTableRatePerHour = useMemo(() => {
+    if (!booking || bookingTableNumber === undefined) return 0;
+    return booking.stations
+      .filter((stationBooking) => stationBooking.station.tableNumber === bookingTableNumber)
+      .reduce((total, stationBooking) => total + stationBooking.appliedRatePerHour, 0);
+  }, [booking, bookingTableNumber]);
+
   // Calculate pricing for selected station
   const pricingInfo = useMemo(() => {
     if (!selectedStation || remainingMinutes <= 0) return null;
@@ -153,18 +160,20 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
         : 70;
 
     const baseRate = rule ? rule.hourlyRate : fallbackRate;
+    const incrementalRate = isConsole ? Math.max(baseRate - currentTableRatePerHour, 0) : baseRate;
     const additionalCharge = isSim
       ? Math.round(baseRate * (remainingMinutes / 30))
-      : Math.round((baseRate * remainingMinutes) / 60);
+      : Math.round((incrementalRate * remainingMinutes) / 60);
 
     return {
       baseRate,
+      incrementalRate,
       additionalCharge,
       unitLabel: isSim ? '30m' : 'hr',
       isSim,
       isConsole,
     };
-  }, [selectedStation, controllerCount, pricingRules, remainingMinutes]);
+  }, [selectedStation, controllerCount, pricingRules, remainingMinutes, currentTableRatePerHour]);
 
   // Financial summary
   const financials = useMemo(() => {
@@ -337,9 +346,15 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
                   : norm === 'PS4'
                   ? controllerCount === 2 ? 110 : controllerCount === 3 ? 150 : controllerCount === 4 ? 190 : 70
                   : 70;
+                const currentRate = isConsole
+                  ? booking.stations
+                      .filter((stationBooking) => stationBooking.station.tableNumber === st.tableNumber)
+                      .reduce((total, stationBooking) => total + stationBooking.appliedRatePerHour, 0)
+                  : 0;
+                const incrementalRate = isConsole ? Math.max(rate - currentRate, 0) : rate;
                 const estCharge = isSim
                   ? Math.round(rate * (remainingMinutes / 30))
-                  : Math.round((rate * remainingMinutes) / 60);
+                  : Math.round((incrementalRate * remainingMinutes) / 60);
 
                 return (
                   <button
@@ -373,7 +388,7 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
 
                     <div className="flex items-center justify-between text-[11px] font-mono mt-2">
                       <span className="text-slate-400">
-                        ₹{rate}/{isSim ? '30m' : 'hr'}
+                        ₹{rate}/{isSim ? '30m' : 'hr'}{isConsole ? ' total' : ''}
                       </span>
                       <span className="font-bold text-cyber-green">
                         +₹{estCharge} ({remainingMinutes}m)
@@ -405,7 +420,8 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
                   key={cnt}
                   type="button"
                   onClick={() => setControllerCount(cnt)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all ${
+                  disabled={cnt <= (booking.controllerCount || 1)}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all disabled:opacity-35 disabled:cursor-not-allowed ${
                     controllerCount === cnt
                       ? 'bg-cyber-cyan text-dark-950 font-black shadow-glow-cyan/20'
                       : 'bg-dark-850 text-slate-400 hover:text-white border border-slate-700'
@@ -439,8 +455,11 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
 
             <div className="flex justify-between text-emerald-400 font-bold">
               <span>
-                + Table {selectedStation.tableNumber} ({remainingMinutes}m @ ₹{pricingInfo.baseRate}/
-                {pricingInfo.unitLabel}):
+                + Table {selectedStation.tableNumber} (
+                {pricingInfo.isConsole
+                  ? `${controllerCount}P total ₹${pricingInfo.baseRate}/hr; +₹${pricingInfo.incrementalRate}/hr × ${remainingMinutes}m`
+                  : `${remainingMinutes}m @ ₹${pricingInfo.baseRate}/${pricingInfo.unitLabel}`}
+                ):
               </span>
               <span>+{formatCurrency(financials.additionalCharge)}</span>
             </div>
@@ -473,7 +492,7 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
             type="submit"
             variant="primary"
             size="md"
-            disabled={!selectedStationId || remainingMinutes <= 0 || addConsoleMutation.isPending}
+            disabled={!selectedStationId || remainingMinutes <= 0 || addConsoleMutation.isPending || (!!pricingInfo?.isConsole && pricingInfo.additionalCharge <= 0)}
             isLoading={addConsoleMutation.isPending}
             leftIcon={<PlusCircle className="h-4 w-4" />}
             className="font-bold px-5"
