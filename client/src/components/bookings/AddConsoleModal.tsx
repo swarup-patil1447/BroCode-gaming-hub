@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Booking, Station, PricingRule, DeviceType } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -35,6 +35,15 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
   const [controllerCount, setControllerCount] = useState<number>(1);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && booking) {
+      setControllerCount(Math.min(Math.max(booking.controllerCount || 1, 1), 4));
+      setSelectedStationId(null);
+      setFormError(null);
+      setSuccessMessage(null);
+    }
+  }, [isOpen, booking?.id]);
 
   // Fetch all stations
   const { data: stations = [], isLoading: isStationsLoading } = useQuery({
@@ -312,14 +321,21 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
                 // Preview charge
                 const norm = (st.deviceType || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
                 const isSim = norm === 'CAR_SIMULATOR' || norm === 'SIMULATOR';
-                const rule = isSim
+                const isConsole = norm === 'PS5' || norm === 'PS4';
+                const rule = isConsole
+                  ? pricingRules.find(
+                      (r) => r.deviceType === norm && r.controllerCount === controllerCount
+                    ) || pricingRules.find((r) => r.deviceType === norm && r.controllerCount === 1)
+                  : isSim
                   ? pricingRules.find((r) => r.deviceType === 'CAR_SIMULATOR') ||
                     pricingRules.find((r) => r.deviceType === 'SIMULATOR')
                   : pricingRules.find((r) => r.deviceType === norm);
                 const rate = rule
                   ? rule.hourlyRate
                   : norm === 'PS5'
-                  ? 90
+                  ? controllerCount === 2 ? 140 : controllerCount === 3 ? 190 : controllerCount === 4 ? 240 : 90
+                  : norm === 'PS4'
+                  ? controllerCount === 2 ? 110 : controllerCount === 3 ? 150 : controllerCount === 4 ? 190 : 70
                   : 70;
                 const estCharge = isSim
                   ? Math.round(rate * (remainingMinutes / 30))
@@ -380,8 +396,8 @@ export const AddConsoleModal: React.FC<AddConsoleModalProps> = ({
         {selectedStation && (selectedStation.deviceType === 'PS5' || selectedStation.deviceType === 'PS4') && (
           <div className="p-3 rounded-xl bg-dark-950 border border-slate-800 flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold text-white">Controllers for Table {selectedStation.tableNumber}</p>
-              <p className="text-[11px] text-slate-400">Multiplayer controller rate</p>
+              <p className="text-xs font-bold text-white">Players for Table {selectedStation.tableNumber}</p>
+              <p className="text-[11px] text-slate-400">Choose the player rate for this added console</p>
             </div>
             <div className="flex items-center gap-1.5">
               {[1, 2, 3, 4].map((cnt) => (
